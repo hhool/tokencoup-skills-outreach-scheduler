@@ -9,8 +9,10 @@ data_root: data                    # repo-local (gitignored) or e.g. ~/outreach-
 sources:
   # Import sources. WDC-style harvested data + similar datasets.
   # workbench targets.jsonl / prospector store are intentionally NOT sources.
+  # Convention: copy the referenced data files into data/sources/ first —
+  # the project reads only what lives under data_root (gitignored).
   wdc_competitor_links:
-    glob: "~/Desktop/skill-seo-geo/backlink-prospector/data/competitor-links-*.json"
+    glob: "data/sources/competitor-links-*.json"
   # similar: []                    # future adapters, one block each
   exclude:
     - workbench_jsonl
