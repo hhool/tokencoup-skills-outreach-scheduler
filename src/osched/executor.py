@@ -149,16 +149,22 @@ def build_context(conn, project: dict, row) -> dict:
 # --------------------------------------------------------------------------
 
 def _post_form(entry_url: str, fields: list[str], ctx: dict,
-               timeout: float) -> tuple[int, str]:
+               timeout: float, prefill: dict[str, str] | None = None
+               ) -> tuple[int, str]:
     """POST urlencoded values for the discovered field names.
 
     Only fields we can fill are sent; unknown honeypot-style names are left
-    empty. Returns (http_status, note). status 0 = network error.
+    empty. Hidden state fields (viewstate, CSRF, nonce) are posted back
+    exactly as the page shipped them. Returns (http_status, note).
+    status 0 = network error.
     """
+    prefill = prefill or {}
     values: list[tuple[str, str]] = []
     for name in fields:
         low = name.lower()
-        if any(k in low for k in ("url", "link", "site")) and "siti" not in low:
+        if name in prefill:                 # hidden state: echo verbatim
+            values.append((name, prefill[name]))
+        elif any(k in low for k in ("url", "link", "site")) and "siti" not in low:
             values.append((name, ctx["url"]))
         elif any(k in low for k in ("title", "name", "author")):
             values.append((name, ctx["title"]))
@@ -187,16 +193,23 @@ def _post_form(entry_url: str, fields: list[str], ctx: dict,
 def _parse_live_form(entry_url: str, timeout: float):
     """Fetch the entry page and parse the first submit-like form.
 
-    Pre-submit freshness check (§4c): returns (entry_url, fields, captcha).
-    Falls back to the cached entry_url when redirects move the form.
+    Pre-submit freshness check (§4c): returns (post_url, fields, captcha,
+    prefill). Falls back to the cached entry_url when redirects move the form.
     """
     status, final_url, html = probe_mod._fetch(entry_url, timeout)
     if status in (403, 412, 429):
-        return None, [], "bot-blocked"
+        return None, [], "bot-blocked", {}
     if status != 200 or not html:
-        return None, [], "unreachable"
-    ok, fields = probe_mod._looks_like_submit_form(html)
-    return final_url, fields, probe_mod._detect_captcha(html) if ok else "none"
+        return None, [], "unreachable", {}
+    ok, fields, action = probe_mod.find_submit_form(html)
+    if not ok:
+        return final_url, [], "none", {}
+    # The form's own action is the real endpoint; posting to the page URL
+    # silently misses handlers mounted elsewhere (or rewrites them as GET).
+    post_url = (probe_mod._absolutize(action, final_url)
+                if action else final_url) or final_url
+    return (post_url, fields, probe_mod._detect_captcha(html),
+            probe_mod.state_fields(html))
 
 
 def exec_form(conn, cfg: dict, project: dict, row, ctx: dict,
@@ -206,7 +219,7 @@ def exec_form(conn, cfg: dict, project: dict, row, ctx: dict,
     timeout = float(pcfg.get("timeout_seconds", 12.0))
     entry = row["entry_url"] or row["url"]
 
-    live_entry, fields, captcha = _parse_live_form(entry, timeout)
+    live_entry, fields, captcha, prefill = _parse_live_form(entry, timeout)
     if captcha == "bot-blocked":
         return {"state": "human", "note": "bot-blocked at pre-submit check"}
     if captcha == "unreachable":
@@ -228,11 +241,13 @@ def exec_form(conn, cfg: dict, project: dict, row, ctx: dict,
         return {"state": "human", "note": f"captcha={cap} unknown -> human queue"}
 
     if dry_run:
-        return {"state": "dry-run",
-                "note": f"would POST {len(fields)} fields to {live_entry}",
-                "fields": fields}
+        state_n = sum(1 for f in fields if f in prefill)
+        note = f"would POST {len(fields)} fields to {live_entry}"
+        if state_n:
+            note += f" ({state_n} state field(s) echoed back)"
+        return {"state": "dry-run", "note": note, "fields": fields}
 
-    status, err = _post_form(live_entry, fields, ctx, timeout)
+    status, err = _post_form(live_entry, fields, ctx, timeout, prefill)
     if status in (200, 201, 202, 301, 302, 303, 307, 308):
         return {"state": "submitted", "http": status, "note": "form accepted"}
     if status in RETRYABLE_HTTP:

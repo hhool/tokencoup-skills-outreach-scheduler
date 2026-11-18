@@ -134,3 +134,47 @@ def test_email_opt_in_reaches_the_smtp_layer(conn, monkeypatch):
     monkeypatch.setattr(executor, "exec_email", fake_email)
     executor.run_execution(c, {}, _project(delivery={"email_auto": True}))
     assert seen.get("called") is True
+
+
+# --------------------------------------------------------------------------
+# hidden state fields (ASP.NET viewstate, CSRF tokens) must be echoed back
+# --------------------------------------------------------------------------
+
+def test_state_fields_capture_viewstate_and_csrf():
+    html = """<form method="post" action="/add-site">
+      <input type="hidden" name="__VIEWSTATE" value="abc123">
+      <input type="hidden" name="__VIEWSTATEGENERATOR" value="XY">
+      <input type="hidden" name="csrf_token" value="t0k">
+      <input name="siteURLInputN2">
+    </form>"""
+    st = probe.state_fields(html)
+    assert st["__VIEWSTATE"] == "abc123"
+    assert st["csrf_token"] == "t0k"
+    assert "siteURLInputN2" not in st
+
+
+def test_post_form_echoes_state_values(monkeypatch):
+    """Posting empty viewstate is an instant ASP.NET rejection."""
+    captured = {}
+
+    class FakeResp:
+        status = 200
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *a):
+            return False
+
+    def fake_urlopen(req, timeout=None):
+        captured["data"] = req.data.decode()
+        return FakeResp()
+
+    monkeypatch.setattr(executor.urllib.request, "urlopen", fake_urlopen)
+    status, _ = executor._post_form(
+        "https://dir.example/add",
+        ["__VIEWSTATE", "siteURLInputN2"], {"url": "https://t.example/"}, 5.0,
+        {"__VIEWSTATE": "abc123"})
+    assert status == 200
+    assert "__VIEWSTATE=abc123" in captured["data"]
+    assert "siteURLInputN2=https%3A%2F%2Ft.example%2F" in captured["data"]

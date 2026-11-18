@@ -163,8 +163,29 @@ def find_entry_candidates(html: str, base_url: str, limit: int) -> list[str]:
     return out
 
 
-def _looks_like_submit_form(html: str) -> tuple[bool, list[str]]:
-    """A form whose inputs accept a destination URL (not a login/signup)."""
+def state_fields(html: str) -> dict[str, str]:
+    """Hidden / anti-CSRF inputs and the values the page shipped with them.
+
+    ASP.NET (`__VIEWSTATE`, `__EVENTVALIDATION`), Rails (`authenticity_token`)
+    and nonce fields must be posted back unchanged; sending them empty is an
+    automatic server-side rejection.
+    """
+    out: dict[str, str] = {}
+    for tag in re.finditer(r"<input\b[^>]*>", html, re.I):
+        t = tag.group(0)
+        if not re.search(r"""type\s*=\s*["']hidden["']""", t, re.I):
+            if not re.search(r"""name\s*=\s*["'](__|\w*(csrf|token|nonce)\w*)["']""",
+                             t, re.I):
+                continue
+        nm = re.search(r"""name\s*=\s*["']([^"']+)["']""", t, re.I)
+        vm = re.search(r"""value\s*=\s*["']([^"']*)["']""", t, re.I)
+        if nm:
+            out[nm.group(1)] = vm.group(1) if vm else ""
+    return out
+
+
+def find_submit_form(html: str) -> tuple[bool, list[str], str]:
+    """First form that accepts a destination URL: (ok, fields, action)."""
     for form_m in re.finditer(r"<form\b.*?</form>", html, re.I | re.S):
         block = form_m.group(0)
         fields = FORM_FIELD_RE.findall(block)
@@ -175,12 +196,19 @@ def _looks_like_submit_form(html: str) -> tuple[bool, list[str]]:
             continue        # login / signup / password reset
         open_tag = block[: block.find(">") + 1]
         action_m = FORM_ACTION_RE.search(open_tag)
-        if action_m and CREDENTIAL_ACTION_RE.search(action_m.group(1)):
+        action = action_m.group(1) if action_m else ""
+        if action and CREDENTIAL_ACTION_RE.search(action):
             continue        # credential endpoint behind a plain form
         if not any(k in n for n in names for k in URL_FIELD_KEYS):
             continue        # search box, newsletter box, contact form
-        return True, fields
-    return False, []
+        return True, fields, action
+    return False, [], ""
+
+
+def _looks_like_submit_form(html: str) -> tuple[bool, list[str]]:
+    """A form whose inputs accept a destination URL (not a login/signup)."""
+    ok, fields, _ = find_submit_form(html)
+    return ok, fields
 
 
 def probe_site(url: str, *, timeout: float = 12.0,
