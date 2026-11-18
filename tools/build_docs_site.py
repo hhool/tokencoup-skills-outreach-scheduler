@@ -29,6 +29,7 @@ PAGES = [
     ("client-intake", DOCS / "client-intake.md", DOCS / "client-intake.zh.md", "Client Intake", "客户接入"),
     ("deployment", DOCS / "deployment.md", DOCS / "deployment.zh.md", "Deployment", "部署"),
     ("operations", DOCS / "operations.md", DOCS / "operations.zh.md", "Operations", "运维"),
+    ("client-portal", DOCS / "client-portal.md", DOCS / "client-portal.zh.md", "Client Portal", "客户端门户"),
     ("design", REPO / "DESIGN.md", REPO / "DESIGN.zh.md", "Design", "设计"),
 ]
 
