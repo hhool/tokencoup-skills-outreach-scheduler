@@ -90,6 +90,11 @@ CREATE TABLE IF NOT EXISTS oauth_handoff (
   session_token TEXT NOT NULL REFERENCES client_session(token),
   expires_at    TEXT NOT NULL
 );
+
+CREATE TABLE IF NOT EXISTS oauth_state (
+  state      TEXT PRIMARY KEY,          -- CSRF state, server-side single use
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
 """
 
 def _migrate_portal(conn: sqlite3.Connection) -> None:
@@ -1270,6 +1275,16 @@ class PortalHandler(BaseHTTPRequestHandler):
                 f"{provider} sign-in is not configured on this deployment.")
             return
         state = secrets.token_urlsafe(16)
+        # state is validated server-side (single use, 10 min TTL) because
+        # privacy browsers (WebKit ITP et al.) drop Set-Cookie on the first
+        # hop of a cross-site redirect chain; the cookie stays as an extra
+        # check where it works.
+        self.conn.execute(
+            "DELETE FROM oauth_state WHERE created_at <= "
+            "datetime('now','-10 minutes')")
+        self.conn.execute("INSERT INTO oauth_state(state) VALUES (?)",
+                          (state,))
+        self.conn.commit()
         cookie = (f"{OAUTH_STATE_COOKIE}={state}; HttpOnly; SameSite=Lax; "
                   f"Path=/; Max-Age={OAUTH_STATE_MAX_AGE}")
         ep = OAUTH_ENDPOINTS[provider]
@@ -1287,10 +1302,20 @@ class PortalHandler(BaseHTTPRequestHandler):
         qs = parse_qs(urlparse(self.path).query)
         state = (qs.get("state") or [""])[0]
         cookie_state = self._cookie(OAUTH_STATE_COOKIE) or ""
-        # consume the state cookie regardless of outcome (single use)
+        # consume the stored state regardless of outcome (single use);
+        # valid when it matches the cookie OR the server-side store
+        stored = False
+        if state:
+            stored = self.conn.execute(
+                "SELECT 1 FROM oauth_state WHERE state=? AND created_at > "
+                "datetime('now','-10 minutes')", (state,)).fetchone() \
+                is not None
+            self.conn.execute("DELETE FROM oauth_state WHERE state=?",
+                              (state,))
+            self.conn.commit()
         expire = (f"{OAUTH_STATE_COOKIE}=; HttpOnly; SameSite=Lax; Path=/; "
                   f"Max-Age=0")
-        if not state or state != cookie_state:
+        if not state or (state != cookie_state and not stored):
             self._redirect("/", extra_cookie=expire)
             return
         code = (qs.get("code") or [""])[0]
