@@ -75,12 +75,13 @@ const routes = {
 
 async function render() {
   const hash = location.hash || "#/login";
-  const fn = routes[hash] || pageAuth;
+  const base = hash.split("?")[0];   // "#/oauth?c=…" routes as "#/oauth"
+  const fn = routes[base] || pageAuth;
   try { await fn(hash); } catch (e) {
     if (e.status === 401) { setToken("", "", ""); location.hash = "#/login"; }
     $app.innerHTML = card(`<p class="warn">${esc(e.message)}</p>`);
   }
-  nav(hash.replace("#/", ""));
+  nav(base.replace("#/", ""));
 }
 window.addEventListener("hashchange", render);
 
