@@ -1,0 +1,36 @@
+# --- User data isolation (HARD RULE: never commit user data) ---
+data/
+*.db
+*.sqlite
+*.sqlite3
+
+# --- Secrets (never commit) ---
+*.env
+.env
+config/global.yaml
+config/secrets*
+config/*.local.yaml
+config/*.local.yml
+
+# --- Exported / derived artifacts ---
+out/
+*.log
+
+# --- WDC raw graph caches (multi-GB, re-downloadable via import/dl.sh) ---
+*.gz
+
+# --- Python ---
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+venv/
+
+# --- OS / IDE ---
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+*.swp
+*.bak
+*.tmp

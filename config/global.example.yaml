@@ -1,0 +1,41 @@
+# outreach-scheduler global configuration (example — copy to global.yaml and edit)
+# English primary, Chinese secondary (中文注释为辅).
+#
+# User data NEVER lives in this repo: data_root points outside, or the
+# repo-local data/ directory which is fully gitignored.
+
+data_root: data                    # repo-local (gitignored) or e.g. ~/outreach-data
+
+sources:
+  # Import sources. WDC-style harvested data + similar datasets.
+  # workbench targets.jsonl / prospector store are intentionally NOT sources.
+  wdc_competitor_links:
+    glob: "~/Desktop/skill-seo-geo/backlink-prospector/data/competitor-links-*.json"
+  # similar: []                    # future adapters, one block each
+  exclude:
+    - workbench_jsonl
+    - prospector_store
+
+scheduler:
+  run_at: "09:30"
+  timezone: Asia/Shanghai
+
+report:
+  email: ""                        # empty = no daily report email; set to enable
+  smtp_env_file: ~/.sextant/poki2-gmail.env
+
+dr:
+  provider: openpagerank           # free 0-10 domain rank, 30k domains/month
+  cache_days: 30
+  api_key_env: OPENPAGERANK_API_KEY
+
+captcha:
+  channel: cua                     # free channel: local real-Chrome automation
+  solver_api: ""                   # optional fallback (2captcha/anticaptcha); empty = free-only
+  api_key_env: SOLVER_API_KEY
+  monthly_budget_usd: 0            # 0 = paid solving disabled
+  email_code_imap: true
+
+quotas:
+  per_domain_per_day: 100          # R-530 convention
+  per_project_per_day: 10
