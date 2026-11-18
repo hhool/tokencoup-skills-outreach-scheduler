@@ -296,8 +296,10 @@ process and the cron process are separate, sqlite WAL mode allows both.</p>
 <li>~~View A/B v1~~ <strong>shipped 2026-11-18</strong>: monthly quota window,
    capacity gauge, DR buckets, source mix, weekly funnel, report
    archive page (<code>/reports</code>, reuses B2 machinery without mail).</li>
-<li>Self-service project creation + ownership verification + trial
-   credits (§1.5).</li>
+<li>~~Self-service project creation + ownership verification + trial
+   credits (§1.5)~~ <strong>shipped 2026-11-18</strong>: meta-tag verification
+   (DNS TXT later), one trial per verified domain AND per account,
+   assets written via the standard project_asset schema.</li>
 <li>Tier 4 downstream traffic — after UTM convention agreed with served
    sites.</li>
 </ol>
@@ -519,7 +521,9 @@ run_log + link_verify 聚合——与 B4 profile 同一套聚合，以趋势图�
    scrypt 密码、HttpOnly 会话 cookie、只读视图 A/B v0 看板；Google/
    Facebook 按钮先桩着（回调域名绑定后先接 Google）。</li>
 <li>按 §4 契约做视图 A/B v1（DR 分桶、漏斗趋势、报告存档页）。</li>
-<li>自助建项目 + 归属验证 + 试用额度（§1.5）。</li>
+<li>~~自助建项目 + 归属验证 + 试用额度（§1.5）~~ <strong>2026-11-18 已交付</strong>：
+   meta 标签验证（DNS TXT 后续）、每已验证域名且每账号仅一次试用、
+   资产经标准 project_asset schema 写入。</li>
 <li>第 4 层下游流量——与被服务站点约定 UTM 规范后做。</li>
 </ol>
 <p>待定项：OAuth 回调域名（fly 应用需绑真实域名）、Facebook 开发者

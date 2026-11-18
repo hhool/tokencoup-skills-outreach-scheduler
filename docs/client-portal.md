@@ -176,8 +176,10 @@ process and the cron process are separate, sqlite WAL mode allows both.
 2. ~~View A/B v1~~ **shipped 2026-11-18**: monthly quota window,
    capacity gauge, DR buckets, source mix, weekly funnel, report
    archive page (`/reports`, reuses B2 machinery without mail).
-3. Self-service project creation + ownership verification + trial
-   credits (§1.5).
+3. ~~Self-service project creation + ownership verification + trial
+   credits (§1.5)~~ **shipped 2026-11-18**: meta-tag verification
+   (DNS TXT later), one trial per verified domain AND per account,
+   assets written via the standard project_asset schema.
 4. Tier 4 downstream traffic — after UTM convention agreed with served
    sites.
 

@@ -158,7 +158,9 @@ run_log + link_verify 聚合——与 B4 profile 同一套聚合，以趋势图�
    scrypt 密码、HttpOnly 会话 cookie、只读视图 A/B v0 看板；Google/
    Facebook 按钮先桩着（回调域名绑定后先接 Google）。
 2. 按 §4 契约做视图 A/B v1（DR 分桶、漏斗趋势、报告存档页）。
-3. 自助建项目 + 归属验证 + 试用额度（§1.5）。
+3. ~~自助建项目 + 归属验证 + 试用额度（§1.5）~~ **2026-11-18 已交付**：
+   meta 标签验证（DNS TXT 后续）、每已验证域名且每账号仅一次试用、
+   资产经标准 project_asset schema 写入。
 4. 第 4 层下游流量——与被服务站点约定 UTM 规范后做。
 
 待定项：OAuth 回调域名（fly 应用需绑真实域名）、Facebook 开发者
