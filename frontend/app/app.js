@@ -105,15 +105,18 @@ async function pagePricing() {
     ${card(`<h2>Starter</h2><p class="price">$80</p>
       <p>per live link · 1–9 links/month</p>
       <p class="muted">For single-site owners testing directory outreach
-      as a channel.</p>`)}
+      as a channel.</p>
+      ${token ? `<button onclick="requestPackage('starter')">Request this package</button>` : ""}`)}
     ${card(`<h2>Growth</h2><p class="price">$65</p>
       <p>per live link · 10–49 links/month</p>
       <p class="muted">Most popular — steady monthly link velocity with
-      full ledger evidence.</p>`)}
+      full ledger evidence.</p>
+      ${token ? `<button onclick="requestPackage('growth')">Request this package</button>` : ""}`)}
     ${card(`<h2>Scale</h2><p class="price">$50</p>
       <p>per live link · 50+ links/month</p>
       <p class="muted">Agency / portfolio volume; dedicated quota
-      planning.</p>`)}
+      planning.</p>
+      ${token ? `<button onclick="requestPackage('scale')">Request this package</button>` : ""}`)}
   </div>
   ${card(`<h2>Service guarantee</h2>
     <p>A link that never reaches <b>live</b> after auto-retry + human
@@ -123,8 +126,16 @@ async function pagePricing() {
     <p class="muted">Every consumed credit has a ledger row with the
     confirmed URL and check timestamp — exportable as an invoice
     attachment.</p>`)}
-  <div class="center">${cta}</div>`;
+  <div class="center">${cta}</div>
+  <div id="notice"></div>`;
 }
+window.requestPackage = async tier => {
+  try {
+    const d = await api("/api/request-package", { method: "POST",
+      body: JSON.stringify({ tier }) });
+    notice(esc(d.message), "ok");
+  } catch (e) { notice(esc(e.message), "warn"); }
+};
 
 // ---------------------------------------------------------------- auth
 async function oauthStatus() {
@@ -237,6 +248,19 @@ async function pageDashboard() {
     html += card(`<h2>Next steps</h2>
       <table><tr><th>project</th><th>state</th><th>action</th></tr>
       ${steps.join("")}</table>`);
+  }
+  // conversion state — trial credits consumed or window closed
+  const exhausted = (d.projects || []).filter(p =>
+    p.quota_type === "trial" &&
+    (p.quota_used >= p.quota_total ||
+     (p.trial_until &&
+      new Date(p.trial_until.replace(" ", "T") + "Z") < new Date())));
+  if (exhausted.length) {
+    html += card(`<h2>Trial consumed — keep the momentum</h2>
+      <p>Your trial on <b>${esc(exhausted.map(p => p.domain).join(", "))}</b>
+      is used up. Choose a package to keep building — you only ever pay
+      for links confirmed live, and the trial ledger stays as evidence.</p>
+      <p><a class="btn" href="#/pricing">Choose a package →</a></p>`);
   }
   if (!d.projects.length) {
     html += card(`<p class="muted">No active project yet.
@@ -389,6 +413,17 @@ async function pageAdmin() {
         <input name="quota_total" value="${r.quota_total}" style="width:70px">
         <button>Set</button></form></td></tr>`).join("") ||
       "<tr><td colspan='5' class='muted'>no active projects</td></tr>"}</table>`);
+  html += card(`<h2>Package requests</h2>
+    <table><tr><th>client</th><th>tier</th><th>planned</th><th>$ / link</th><th></th></tr>
+    ${(d.packages || []).map(p => `<tr><td>${esc(p.email)}</td>
+      <td>${esc(p.tier)}</td><td>${p.links_planned || "—"}</td>
+      <td>$${p.price_per_link}</td>
+      <td class="row"><button onclick="doAdminBtn('package_done',${p.id})">Done</button>
+      <button onclick="doAdminBtn('package_cancel',${p.id})">Cancel</button></td></tr>`).join("") ||
+      "<tr><td colspan='5' class='muted'>no pending package requests</td></tr>"}</table>
+    <p class="muted">Confirm payment offline, then set the project's
+    quota_type=paid via the quota tool above — the ledger keeps
+    serving as the invoice evidence.</p>`);
   html += card(`<h2>Clients</h2>
     <table><tr><th>email</th><th>role</th><th></th></tr>
     ${d.clients.map(c => `<tr><td>${esc(c.email)}</td><td>${esc(c.role)}</td>

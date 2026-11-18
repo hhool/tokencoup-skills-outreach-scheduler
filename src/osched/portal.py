@@ -39,6 +39,13 @@ from .report import send_mail
 SESSION_DAYS = 14
 VERIFY_HOURS = 24
 
+# ratified pricing (docs/business.md §Pricing) — per live link, monthly packs
+PACKAGE_TIERS = {
+    "starter": 80,   # 1–9 links/month
+    "growth": 65,    # 10–49 links/month
+    "scale": 50,     # 50+ links/month
+}
+
 PORTAL_SCHEMA = """
 CREATE TABLE IF NOT EXISTS client (
   id            INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -95,6 +102,17 @@ CREATE TABLE IF NOT EXISTS oauth_handoff (
 CREATE TABLE IF NOT EXISTS oauth_state (
   state      TEXT PRIMARY KEY,          -- CSRF state, server-side single use
   created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE TABLE IF NOT EXISTS package_request (
+  id             INTEGER PRIMARY KEY AUTOINCREMENT,
+  client_id      INTEGER NOT NULL REFERENCES client(id),
+  tier           TEXT NOT NULL,          -- starter | growth | scale
+  links_planned  INTEGER,
+  price_per_link INTEGER NOT NULL,
+  status         TEXT NOT NULL DEFAULT 'pending',
+                 -- pending | done | cancelled
+  created_at     TEXT NOT NULL DEFAULT (datetime('now'))
 );
 """
 
@@ -1072,6 +1090,7 @@ class PortalHandler(BaseHTTPRequestHandler):
                     "/api/logout": self._api_logout,
                     "/api/new": self._api_new,
                     "/api/verify-domain": self._api_verify_domain,
+                    "/api/request-package": self._api_request_package,
                     "/api/admin": self._api_admin_post,
                     "/api/oauth/exchange": self._api_oauth_exchange,
                 }
@@ -1212,6 +1231,32 @@ class PortalHandler(BaseHTTPRequestHandler):
         self._api_send({"ok": True, "token": token,
                         "role": row["role"], "email": email})
 
+    def _api_request_package(self):
+        client = self._api_auth()
+        if not client:
+            self._api_send({"error": "unauthorized"}, 401)
+            return
+        length = int(self.headers.get("Content-Length") or 0)
+        raw = self.rfile.read(length).decode("utf-8", "replace")
+        body = json.loads(raw or "{}")
+        tier = (body.get("tier") or "").strip().lower()
+        if tier not in PACKAGE_TIERS:
+            self._api_send({"ok": False, "error": "unknown tier"}, 400)
+            return
+        try:
+            links = max(0, int(body.get("links") or 0)) or None
+        except (TypeError, ValueError):
+            links = None
+        self.conn.execute(
+            """INSERT INTO package_request(client_id, tier, links_planned,
+               price_per_link) VALUES(?,?,?,?)""",
+            (client["id"], tier, links, PACKAGE_TIERS[tier]))
+        self.conn.commit()
+        self._api_send({"ok": True,
+                        "message": f"{tier} package request sent — "
+                        "we confirm details within 24h and set your paid "
+                        "quota. Historical ledger stays as evidence."})
+
     def _api_logout(self):
         token = self.headers.get("X-Auth-Token") or \
             self._cookie("osched_session")
@@ -1266,8 +1311,13 @@ class PortalHandler(BaseHTTPRequestHandler):
             "ORDER BY email")]
         wl = [r["email"] for r in self.conn.execute(
             "SELECT email FROM admin_whitelist ORDER BY email")]
+        packages = [dict(r) for r in self.conn.execute(
+            """SELECT p.*, c.email FROM package_request p
+               JOIN client c ON c.id=p.client_id
+               WHERE p.status='pending' ORDER BY p.created_at""")]
         self._api_send({"drafts": drafts, "actives": actives,
-                        "clients": clients, "whitelist": wl})
+                        "clients": clients, "whitelist": wl,
+                        "packages": packages})
 
     def _api_admin_post(self):
         client = self._api_auth()
@@ -1557,6 +1607,12 @@ def admin_action(conn, client, action: str, **kw) -> tuple[bool, str]:
             "verify_state='active'", (total, kw.get("id") or ""))
         conn.commit()
         return True, "Quota updated."
+    if action in ("package_done", "package_cancel"):
+        st = "done" if action == "package_done" else "cancelled"
+        conn.execute("UPDATE package_request SET status=? WHERE id=?",
+                     (st, kw.get("id") or ""))
+        conn.commit()
+        return True, f"Package request {st}."
     if action == "whitelist":
         email = (kw.get("email") or "").strip().lower()
         if not email:
