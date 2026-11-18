@@ -1,12 +1,15 @@
 #!/usr/bin/env python3
 """Private-information scan — pre-commit gate (DESIGN.md §9.2 HARD RULE).
 
-Scans files about to be committed for private data: personal emails,
-hardcoded passwords/API keys, and known credential strings (detected via
-SHA-256 digests only — this scanner never embeds plaintext credentials).
+Scans files about to be committed for private data:
+  * personal emails
+  * hardcoded passwords / API keys / secrets
+  * known credential strings  (detected via SHA-256 digests only)
+  * known private domains     (own sites + competitors; digests only)
 
-Exit 1 if anything suspicious is found.
-中文：提交前私有信息扫描，命中即拒绝提交。本扫描器只存凭据摘要，绝不存明文。
+This scanner never embeds plaintext credentials or domain names — the digest
+sets below are one-way hashes maintained by the operator.
+中文：提交前私有信息扫描，命中即拒绝提交。扫描器只存凭据/域名的 SHA256 摘要，绝不存明文。
 
 Usage:
   python3 tools/private_scan.py [paths...]     # default: all non-ignored files
@@ -39,15 +42,54 @@ KNOWN_CRED_SHA256 = {
     "e623214a68bce9fd515c934ab7745ec7c1efa2b2c4df5b5f894817ca149b11e8",
 }
 
+# SHA-256 digests of private domain names (lowercase, no www.). File NAMES and
+# content must both stay domain-free; filenames are checked separately.
+KNOWN_PRIVATE_DOMAIN_SHA256 = {
+    "f7de16800736df61cf5f97bf271e630d795c538681d57ffffd3b2f03defb2c31",
+    "ab6c687996af1ffe907d8dc122f3872da9c8797aaea49b95c77f42e2a79d476d",
+    "d2341c31a665156c5d36213fb0711138279099cc3bf9ac769782c35f62fe82de",
+    "86f6b8452ef689c79bfecbfc152e8e88e2bdbc297dab133e54f2e1cc320d00f7",
+    "485177c8c6fabd6b828380bcbc530888c1e312fc4b568d618df1485be5069f65",
+    "186b8507e064e3d41a6e1ce8ebfb22d4fbf1e0cac5d508d0b3e6085de403d287",
+    "92faa571c58cb69596e67fe0d9b39f67babe208e4d883cc24dbd3607d7055e8a",
+    "111e47ee27b925114d83ba7d0ee9af425542ad6ba7636fd3481ac775ee7d710f",
+    "cd4bbc0e8322bf9c531b09521895fd3da406c3cfe5a151fc40cfb142d4915ae1",
+    "fc3603d552f20baa7352475d7b5005c0dde289fd83e61cd76f2470950a3fddbe",
+}
+
+# Generic placeholder domains that are always allowed in code/docs.
+DOMAIN_TOKEN_RE = re.compile(
+    r"(?<![\w.@-])((?:[a-z0-9](?:[a-z0-9-]*[a-z0-9])?\.)+[a-z]{2,})(?![\w-])",
+    re.I,
+)
+
 ALLOW_EXTS = {".py", ".sh", ".yaml", ".yml", ".md", ".json", ".toml", ".txt"}
 TOKEN_RE = re.compile(r"[A-Za-z0-9]{16,}")
 
 
+def _digest(text: str) -> str:
+    return hashlib.sha256(text.strip().lower().encode()).hexdigest()
+
+
 def _known_cred_token(line: str) -> bool:
-    for tok in TOKEN_RE.findall(line):
-        if hashlib.sha256(tok.encode()).hexdigest() in KNOWN_CRED_SHA256:
-            return True
-    return False
+    return any(_digest(tok) in KNOWN_CRED_SHA256 for tok in TOKEN_RE.findall(line))
+
+
+def _private_domain_token(line: str) -> str | None:
+    for m in DOMAIN_TOKEN_RE.finditer(line):
+        dom = m.group(1).lower()
+        if dom.removeprefix("www.") in ("example.com", "example.org"):
+            continue
+        if _digest(dom) in KNOWN_PRIVATE_DOMAIN_SHA256:
+            return m.group(1)
+    return None
+
+
+def _check_filename(path: Path) -> str | None:
+    for token in DOMAIN_TOKEN_RE.findall(path.name):
+        if _digest(token) in KNOWN_PRIVATE_DOMAIN_SHA256:
+            return token
+    return None
 
 
 def tracked_files(paths: list[str]) -> list[Path]:
@@ -67,6 +109,15 @@ def tracked_files(paths: list[str]) -> list[Path]:
 def scan(paths: list[str]) -> int:
     files = tracked_files(paths)
     hits = 0
+
+    # 1) filename check (rule: file names must be domain-free)
+    for path in files:
+        dom = _check_filename(path)
+        if dom:
+            print(f"[PRIVATE] filename contains private domain: {path}")
+            hits += 1
+
+    # 2) content check
     for path in files:
         if path.suffix.lower() not in ALLOW_EXTS:
             continue
@@ -84,10 +135,15 @@ def scan(paths: list[str]) -> int:
                     break
             if label is None and _known_cred_token(line):
                 label = "known credential string"
+            if label is None:
+                dom = _private_domain_token(line)
+                if dom:
+                    label = f"private domain ({dom})"
             if label:
                 print(f"[PRIVATE] {path}:{line_no}: {label}")
                 print(f"    {line.strip()[:120]}")
                 hits += 1
+
     if hits:
         print(f"\nFAIL: {hits} private-information hit(s). Commit blocked.")
         return 1

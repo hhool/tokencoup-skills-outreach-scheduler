@@ -24,7 +24,7 @@ scheduler:
 
 report:
   email: ""                        # empty = no daily report email; set to enable
-  smtp_env_file: ~/.sextant/poki2-gmail.env
+  smtp_env_file: ~/.sextant/outreach-smtp.env
 
 dr:
   provider: openpagerank           # free 0-10 domain rank, 30k domains/month

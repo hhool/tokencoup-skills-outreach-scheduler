@@ -19,11 +19,11 @@ Get a release at https://webdatamining.org/ (Hyperlink Graph). Download the
 Usage
 -----
   python3 tools/competitor_backlinks.py \
-      --center soundbuttons.click \
-      --competitors myinstants.com,voicemod.net \
+      --center <center-domain> \
+      --competitors competitor-a.com,competitor-b.com \
       --ranks  /data/wdc/cc-main-2025-may-aug-domain-ranks.txt.gz \
       --edges  /data/wdc/cc-main-2025-may-aug-domain-edges.txt.gz \
-      --out    seeds/competitor-links-soundbuttons.click.json
+      --out    seeds/competitor-links-<center-domain>.json
 
   # already-extracted edge list (source,target[,count]) works too:
   python3 tools/competitor_backlinks.py --center ... --competitors ... \
@@ -329,9 +329,9 @@ def rows_from_csv(path, center, competitors, graph_label, min_links, max_rows):
 def main(argv=None):
     ap = argparse.ArgumentParser(
         description="Harvest competitor-backlink prospects from the WDC host graph.")
-    ap.add_argument("--center", required=True, help="center domain, e.g. soundbuttons.click")
+    ap.add_argument("--center", required=True, help="center domain, e.g. example.com")
     ap.add_argument("--competitors", required=True,
-                    help="comma separated competitor domains, e.g. myinstants.com,voicemod.net")
+                    help="comma separated competitor domains, e.g. competitor-a.com,competitor-b.com")
     ap.add_argument("--ranks", help="*-ranks.txt[.gz] (id -> name)")
     ap.add_argument("--edges", help="*-edges.txt[.gz] (from -> to -> count)")
     ap.add_argument("--from-csv", dest="from_csv",

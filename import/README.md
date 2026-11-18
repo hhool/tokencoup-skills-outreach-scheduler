@@ -1,6 +1,6 @@
 # import/ — WDC 收割代码（自 backlink-prospector 原样复制）
 
-复制时间：2026-11-18 · 来源：`/Users/hou/Desktop/skill-seo-geo/backlink-prospector`
+复制时间：2026-11-18 · 来源：内部收割仓库（路径见本地台账，不入库）
 性质：**原样复制，未改动**。outreach-scheduler 正式开发时以此为基线适配（改为读配置、导入 pool）。
 已扫描确认：无密码/密钥/邮箱等私有信息。
 
@@ -22,8 +22,8 @@
    - 新版可从 webdatamining.org 取 domain-ranks/domain-edges 对（competitor_backlinks.py 支持）
 2. **收割工具**（本目录 4 个文件）
 3. **产物**（= outreach-scheduler 导入层的直接输入）：
-   - `backlink-prospector/data/competitor-links-<center>.json`
-   - 现有产物：***REMOVED-PRIVATE-DOMAIN*** / balancebiketoddler.com / soundbuttons.cc / soundbuttons.click
+   - 产物文件已复制进本工程 `data/sources/`，文件名按内容哈希中性化（competitor-links-<hash>.json），
+     原始文件名↔中性名的映射表仅存本地 `data/sources/index.json`（gitignored，不入库）
    - 格式：`{"meta": {...}, "rows": [{"url": "http://host/", "via_competitors": [...], "inbound": n}]}`
 
 ## 导入层适配要点（待开发）

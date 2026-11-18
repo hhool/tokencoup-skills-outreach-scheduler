@@ -200,7 +200,7 @@ scheduler:
   timezone: Asia/Shanghai
 report:
   email: ""            # 默认空=不发；配置后启用
-  smtp_env_file: ~/.sextant/poki2-gmail.env
+  smtp_env_file: ~/.sextant/outreach-smtp.env
 dr:
   provider: openpagerank
   cache_days: 30
@@ -213,8 +213,8 @@ quotas:                  # 护栏，沿用 R-522/R-530 口径
   per_domain_per_day: 100
   per_project_per_day: 10
 
-# projects/***REMOVED-PRIVATE-DOMAIN***.yaml —— 每项目一份
-domain: ***REMOVED-PRIVATE-DOMAIN***
+# projects/<project-domain>.yaml —— 每项目一份
+domain: <project-domain>
 tags: [gaming, browser-games, english]
 daily_quota: 10
 channels: [form, email]
@@ -306,7 +306,7 @@ CUA 通道说明：
 ## 10. 待拍板 / 后续步骤
 
 1. ~~WDC 数据的确切输入~~ **已确认（2026-11-18）**：
-   - 输入产物 = `backlink-prospector/data/competitor-links-<center>.json`（现有 4 站：***REMOVED-PRIVATE-DOMAIN*** / balancebiketoddler.com / soundbuttons.cc / soundbuttons.click）
+   - 输入产物 = `backlink-prospector/data/competitor-links-<center>.json`（现有 4 份产物文件已复制进项目，文件名按内容哈希中性化，映射表仅存于本地 data/sources/index.json）
    - 处理代码已原样复制到 `outreach-scheduler/import/`（harvest_competitor_links.py、competitor_backlinks.py、export_wdc_fast.py、dl.sh + README 链路说明），无私有信息
    - 原始图数据 ~3GB 本地缓存不入 git
    - 「其他类似数据」仍待提供样例（JSON/CSV 各一份）
@@ -315,4 +315,4 @@ CUA 通道说明：
 4. git init + GitHub 建仓（hhool/outreach-scheduler）：**提交前先落 .gitignore（data/、*.env、config/secrets*）+ private-scan 钩子**（§9.2 硬规则）
 5. Phase 1 架构决策清单：目录结构、建表 SQL、competitor-links→pool 字段映射表（via_competitors/inbound 保留为打分先验）、探测规则清单
 6. wave2 邮件全自动的模板与预热策略需要一版细则
-7. 首个项目建议 ***REMOVED-PRIVATE-DOMAIN***（competitor-links 产物现成，验证「导入→探测→匹配→确认→执行→汇报」全链路）
+7. 首个项目建议用产物最全的现成站点（本地映射表可查），验证「导入→探测→匹配→确认→执行→汇报」全链路

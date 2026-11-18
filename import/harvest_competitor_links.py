@@ -18,8 +18,8 @@ Format (verified against the live files):
   arc:   one edge per line, "<src_index>\\t<dst_index>"  (numeric node ids)
 
 Usage:
-  python3 tools/harvest_competitor_links.py --center soundbuttons.cc
-  python3 tools/harvest_competitor_links.py --center soundbuttons.cc \\
+  python3 tools/harvest_competitor_links.py --center <center-domain>
+  python3 tools/harvest_competitor_links.py --center <center-domain> \\
       --competitors a.com,b.com --min-competitors 2 --limit 20000
   python3 tools/harvest_competitor_links.py --selftest
 
@@ -73,7 +73,7 @@ def _pld_of(domain):
 
     Deliberately shallow (last two labels, common second-level TLDs kept
     whole) — it only needs to be as smart as the graph, which stores bare
-    PLD names like 'myinstants.com'.
+    PLD names like 'competitor-a.com'.
     """
     host = st._bare_domain(domain)
     if not host:
@@ -185,28 +185,28 @@ def _selftest():
     d = tempfile.mkdtemp(prefix="harvest-selftest-")
     idx = os.path.join(d, "pld-index.gz")
     arc = os.path.join(d, "pld-arc.gz")
-    nodes = ["myinstants.com", "voicemod.net", "fan-site-a.com",
+    nodes = ["competitor-a.com", "competitor-b.com", "fan-site-a.com",
              "fan-site-b.com", "unrelated.org", "spam-link-farm.com"]
     with gzip.open(idx, "wt") as f:
         for i, n in enumerate(nodes):
             f.write("%s\t%d\n" % (n, i))
-    # edges: a and b and farm -> myinstants; b -> voicemod; unrelated -> nothing
+    # edges: a and b and farm -> competitor-a; b -> competitor-b; unrelated -> nothing
     edges = [(2, 0), (3, 0), (5, 0), (3, 1), (4, 4)]
     with gzip.open(arc, "wt") as f:
         for s, t in edges:
             f.write("%d\t%d\n" % (s, t))
-    rows, stats = harvest(idx, arc, ["myinstants.com", "voicemod.net"],
+    rows, stats = harvest(idx, arc, ["competitor-a.com", "competitor-b.com"],
                           min_competitors=1)
     urls = {r["url"] for r in rows}
     assert "http://fan-site-a.com/" in urls, rows
     assert "http://fan-site-b.com/" in urls, rows
     assert "http://unrelated.org/" not in urls, rows
     b = next(r for r in rows if "fan-site-b.com" in r["url"])
-    assert set(b["via_competitors"]) == {"myinstants.com", "voicemod.net"}, b
+    assert set(b["via_competitors"]) == {"competitor-a.com", "competitor-b.com"}, b
     assert b["inbound"] == 2, b
-    rows2, _ = harvest(idx, arc, ["myinstants.com"], min_competitors=2)
+    rows2, _ = harvest(idx, arc, ["competitor-a.com"], min_competitors=2)
     assert rows2 == [], rows2          # no host links to 2 comps when only 1 target
-    rows3, _ = harvest(idx, arc, ["myinstants.com"], exclude=["spam-link-farm.com"])
+    rows3, _ = harvest(idx, arc, ["competitor-a.com"], exclude=["spam-link-farm.com"])
     assert "http://spam-link-farm.com/" not in {r["url"] for r in rows3}, rows3
     print("harvest selftest: all assertions passed (%d rows)" % len(rows))
     return 0

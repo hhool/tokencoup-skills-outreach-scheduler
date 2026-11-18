@@ -9,9 +9,9 @@ evidence (multiple competitors linking the same source); liveness is a
 
 Field contract: same as export_to_workbench.py §3; link_state stays unknown.
 Usage:
-    python3 tools/export_wdc_fast.py --center balancebiketoddler.com \
-      --keywords data/keywords-balancebiketoddler.com.json \
-      --min-via 2 --out /tmp/bbt-fast.json
+    python3 tools/export_wdc_fast.py --center <center-domain> \
+      --keywords data/keywords-<center-domain>.json \
+      --min-via 2 --out /tmp/center-fast.json
 """
 import argparse
 import json
@@ -23,7 +23,7 @@ ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "tools"))
 from export_to_workbench import load_relevance  # noqa: E402
 
-# 平台/聚合站：没有实际外链价值（与 soundbuttons v2 结论一致）
+# 平台/聚合站：没有实际外链价值（与既有站点 v2 结论一致）
 PLATFORM_RE = re.compile(r"(?i)(^|\.)(blogspot\.|wordpress\.|tumblr\.|livejournal\.|"
                          r"weebly\.|wixsite\.|github\.io|reddit\.|facebook\.|"
                          r"twitter\.|x\.com|instagram\.|youtube\.|pinterest\.|"
