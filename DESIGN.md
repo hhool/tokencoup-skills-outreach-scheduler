@@ -39,7 +39,7 @@ Key design consequence: WDC/similar data are **raw competitor backlinks** (exter
 | 5 | Human confirmation after matching | **Required.** Auto-match → pending queue → human selection → scheduled plan → executor only runs confirmed items |
 | 6 | Doc language | **English-primary `.md` / Chinese `.zh.md`** |
 | 7 | Submit paths (round 5) | **Discovered submit paths are recorded and reused**; paths are re-verified and updated promptly when they change (§4c) |
-| 8 | Project assets (round 5) | **New project input = a domain.** Site TDK, level-1/2 page URLs, blog articles, outreach email copy are collected per project; missing items are probed; if probing fails, generic templates fill in (§5a) |
+| 8 | Project assets (round 5) | **New project input = a domain.** Site TDK, level-1/2 page URLs, blog articles, outreach email copy are collected per project; missing items are probed; if probing fails, generic templates fill in (§5a). Ratified same day: TDK-missing stays flagged (no placeholder); article fallback = site-summary-derived text; page URLs manual-only (no sitemap candidates); path audit every 30 days |
 
 ---
 
@@ -234,16 +234,16 @@ asset kinds, each with a three-level fallback: `provided` (user supplied) →
 
 | Asset | Used for | provided | probed | fallback |
 |-------|----------|----------|--------|----------|
-| **TDK** (title / description / keywords) | directory-form title/desc fields, outreach copy | user fills in | fetch homepage meta + og: tags | none — marked `missing`, flagged in the daily report for manual fill (TDK cannot be genericized) |
-| **Level-1/2 page URLs** (specific paths under the domain) | landing-URL choice per submission | user lists them | sitemap/RSS/nav discovery → pending-confirmation queue | homepage only |
-| **Blog articles** | guest_post / article submission bodies | site's article list | sitemap/RSS harvest | **generic article template** |
+| **TDK** (title / description / keywords) | directory-form title/desc fields, outreach copy | user fills in | fetch homepage meta + og: tags | none — marked `missing`, flagged in the daily report for manual fill (TDK cannot be genericized; ratified: no placeholder degradation) |
+| **Level-1/2 page URLs** (specific paths under the domain) | landing-URL choice per submission | user lists them (**manual-only**, ratified — no sitemap candidate discovery) | — | homepage only |
+| **Blog articles** | guest_post / article submission bodies | site's article list | sitemap/RSS harvest | **site-summary article**: generic template filled with text derived from the site's own summary (ratified: no human input) |
 | **Outreach email copy** | wave2 email sends | project-specific template | — | **generic outreach email template** |
 
 Rules:
 - Templates live in `templates/` with placeholders (`{domain}`, `{title}`, `{description}`, `{url}`, `{page}`); rendering injects the project's own assets — a project with real assets never sees template text
 - Probed assets (TDK, pages, articles) are **cached in `project_asset` and reused** — no refetch per submission, re-probe only on staleness
 - Every asset row records its `source` (provided/probed/template), so the daily report can show "this project is running on N template-backed assets" as a quality signal
-- Level-1/2 page discovery lands in the pending-confirmation queue (same gate as matching) — auto-discovered pages are confirmed by a human before being used as landing URLs
+- Level-1/2 page URLs come from manual input only (ratified) — no auto-discovery; when absent, submissions land on the homepage
 
 ---
 
@@ -372,11 +372,11 @@ Empty recipient = skip sending, run_log only. Send time follows scheduler config
 
 ## 10. Open items / next steps
 
-0. **Round-5 ratification pending (2026-11-18):**
-   - TDK probing fails (no meta at all): mark `missing` + daily-report reminder (current design) — or degrade to a domain-derived placeholder title?
-   - Generic article template content strategy: original placeholder text vs. site-summary derived text?
-   - Level-1/2 page URLs: manual input only, or sitemap candidates + human confirmation (current design)?
-   - Submit-path freshness audit interval: 30 days default OK?
+0. ~~Round-5 ratification~~ **All ratified (2026-11-18):**
+   - TDK probing fails → mark `missing` + daily-report reminder (no placeholder degradation)
+   - Generic article template = filled with site-summary-derived text, no human input
+   - Level-1/2 page URLs = manual input only (no sitemap candidates)
+   - Submit-path freshness audit = 30 days
 
 1. ~~Exact WDC input~~ **Confirmed (2026-11-18)**:
    - Input products = `competitor-links-<center>.json` (existing 4 product files copied into the project; file names neutralized by content hash; the mapping lives only in the local gitignored index)
