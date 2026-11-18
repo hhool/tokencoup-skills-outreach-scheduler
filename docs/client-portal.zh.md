@@ -223,6 +223,26 @@ wrangler pages deploy frontend --project-name osched-portal --branch main
 - CORS 端到端已验证：preflight 204，未带 token 的 /api/dashboard
   返回 401 JSON。
 
+### 多语言（中英，2026-11-18 上线）
+
+两种机制，刻意的分工：
+
+| 面 | 机制 | URL |
+|---------|-----------|------|
+| 营销页（落地页、隐私页） | **每语言独立静态页**——可被抓取，各自带 canonical + `hreflang` 组 | `/`（en）、`/zh/`（zh-Hans）、`/privacy`、`/zh/privacy` |
+| 门户 SPA | **客户端字典**（`frontend/app/app.js` 的 `DICT.en` / `DICT.zh` + `t()`），不刷新 | `/app/#/…` |
+
+规则：
+
+- 静态页必须带四行 hreflang（`en`、`zh-Hans`、`x-default` → EN），
+  头部有可见切换入口（英文页 → `中文`，中文页 → `EN`）。加语言 =
+  新建目录（`frontend/<lang>/`）+ 在既有每页补 hreflang。
+- SPA 语言存 `portal_lang`，默认按 `navigator.language`（zh* → 中文，
+  其余英文）。切换按钮在门户导航末位；`toggleLang()` 直接重渲染，不刷新。
+- **SPA 渲染函数里不许硬编码文案**——在 `DICT.en` 与 `DICT.zh` 同时加
+  键并调 `t("key")`。缺键回退英文，漏翻只会降级不会坏页面。
+- 后端返回的内容（API 消息、报告正文）保持英文；SPA 只本地化标签与框架文案。
+
 ### 自定义域名绑定（linkattest.com —— 2026-11-18 已执行，等待 NS 生效）
 
 2026-11-18 已完成的步骤（Namecheap 注册 → CF zone → Pages 域 → DNS）：

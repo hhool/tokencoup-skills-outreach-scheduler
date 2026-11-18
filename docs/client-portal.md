@@ -248,6 +248,31 @@ same machine via `scripts/start.sh` (port 8080, `[http_service]`).
 - CORS verified end-to-end: preflight 204, unauthenticated /api/dashboard
   returns 401 JSON.
 
+### Multilingual (EN / ZH, shipped 2026-11-18)
+
+Two different mechanisms, deliberately:
+
+| surface | mechanism | URLs |
+|---------|-----------|------|
+| marketing (landing, privacy) | **separate static pages per language** — crawlable, each with its own canonical + `hreflang` cluster | `/` (en), `/zh/` (zh-Hans), `/privacy`, `/zh/privacy` |
+| portal SPA | **client-side dictionary** in `frontend/app/app.js` (`DICT.en` / `DICT.zh` + `t()`), no reload | `/app/#/…` |
+
+Rules:
+
+- Static pages always carry the four-link hreflang set (`en`, `zh-Hans`,
+  `x-default` → EN) and a visible switcher in the header (EN page →
+  `中文`, ZH page → `EN`). Adding a language = new directory
+  (`frontend/<lang>/`) + hreflang entries in every existing page.
+- SPA language is persisted under `portal_lang`; default is
+  `navigator.language` (zh* → Chinese, else English). The switcher is the
+  last item in the portal nav; `toggleLang()` re-renders without reload.
+- **Never hard-code UI copy in the SPA render functions** — add a key to
+  both `DICT.en` and `DICT.zh` and call `t("key")`. A missing key falls
+  back to EN, so a missed translation degrades gracefully rather than
+  breaking the page.
+- Values returned by the backend (API messages, report text) stay
+  English; the SPA localises labels and chrome only.
+
 ### Custom-domain binding (linkattest.com — executed 2026-11-18, awaiting NS)
 
 Done on 2026-11-18 (Namecheap registration → CF zone → Pages domain → DNS):

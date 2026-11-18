@@ -360,6 +360,45 @@ same machine via <code>scripts/start.sh</code> (port 8080, <code>[http_service]<
 <li>CORS verified end-to-end: preflight 204, unauthenticated /api/dashboard
   returns 401 JSON.</li>
 </ul>
+<h3>Multilingual (EN / ZH, shipped 2026-11-18)</h3>
+<p>Two different mechanisms, deliberately:</p>
+<table>
+<thead>
+<tr>
+<th>surface</th>
+<th>mechanism</th>
+<th>URLs</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>marketing (landing, privacy)</td>
+<td><strong>separate static pages per language</strong> — crawlable, each with its own canonical + <code>hreflang</code> cluster</td>
+<td><code>/</code> (en), <code>/zh/</code> (zh-Hans), <code>/privacy</code>, <code>/zh/privacy</code></td>
+</tr>
+<tr>
+<td>portal SPA</td>
+<td><strong>client-side dictionary</strong> in <code>frontend/app/app.js</code> (<code>DICT.en</code> / <code>DICT.zh</code> + <code>t()</code>), no reload</td>
+<td><code>/app/#/…</code></td>
+</tr>
+</tbody>
+</table>
+<p>Rules:</p>
+<ul>
+<li>Static pages always carry the four-link hreflang set (<code>en</code>, <code>zh-Hans</code>,
+  <code>x-default</code> → EN) and a visible switcher in the header (EN page →
+  <code>中文</code>, ZH page → <code>EN</code>). Adding a language = new directory
+  (<code>frontend/&lt;lang&gt;/</code>) + hreflang entries in every existing page.</li>
+<li>SPA language is persisted under <code>portal_lang</code>; default is
+  <code>navigator.language</code> (zh* → Chinese, else English). The switcher is the
+  last item in the portal nav; <code>toggleLang()</code> re-renders without reload.</li>
+<li><strong>Never hard-code UI copy in the SPA render functions</strong> — add a key to
+  both <code>DICT.en</code> and <code>DICT.zh</code> and call <code>t("key")</code>. A missing key falls
+  back to EN, so a missed translation degrades gracefully rather than
+  breaking the page.</li>
+<li>Values returned by the backend (API messages, report text) stay
+  English; the SPA localises labels and chrome only.</li>
+</ul>
 <h3>Custom-domain binding (linkattest.com — executed 2026-11-18, awaiting NS)</h3>
 <p>Done on 2026-11-18 (Namecheap registration → CF zone → Pages domain → DNS):</p>
 <table>
@@ -682,6 +721,40 @@ wrangler pages deploy frontend --project-name osched-portal --branch main
 <li>同域名的旧版 HTML 门户保留作回退。</li>
 <li>CORS 端到端已验证：preflight 204，未带 token 的 /api/dashboard
   返回 401 JSON。</li>
+</ul>
+<h3>多语言（中英，2026-11-18 上线）</h3>
+<p>两种机制，刻意的分工：</p>
+<table>
+<thead>
+<tr>
+<th>面</th>
+<th>机制</th>
+<th>URL</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>营销页（落地页、隐私页）</td>
+<td><strong>每语言独立静态页</strong>——可被抓取，各自带 canonical + <code>hreflang</code> 组</td>
+<td><code>/</code>（en）、<code>/zh/</code>（zh-Hans）、<code>/privacy</code>、<code>/zh/privacy</code></td>
+</tr>
+<tr>
+<td>门户 SPA</td>
+<td><strong>客户端字典</strong>（<code>frontend/app/app.js</code> 的 <code>DICT.en</code> / <code>DICT.zh</code> + <code>t()</code>），不刷新</td>
+<td><code>/app/#/…</code></td>
+</tr>
+</tbody>
+</table>
+<p>规则：</p>
+<ul>
+<li>静态页必须带四行 hreflang（<code>en</code>、<code>zh-Hans</code>、<code>x-default</code> → EN），
+  头部有可见切换入口（英文页 → <code>中文</code>，中文页 → <code>EN</code>）。加语言 =
+  新建目录（<code>frontend/&lt;lang&gt;/</code>）+ 在既有每页补 hreflang。</li>
+<li>SPA 语言存 <code>portal_lang</code>，默认按 <code>navigator.language</code>（zh* → 中文，
+  其余英文）。切换按钮在门户导航末位；<code>toggleLang()</code> 直接重渲染，不刷新。</li>
+<li><strong>SPA 渲染函数里不许硬编码文案</strong>——在 <code>DICT.en</code> 与 <code>DICT.zh</code> 同时加
+  键并调 <code>t("key")</code>。缺键回退英文，漏翻只会降级不会坏页面。</li>
+<li>后端返回的内容（API 消息、报告正文）保持英文；SPA 只本地化标签与框架文案。</li>
 </ul>
 <h3>自定义域名绑定（linkattest.com —— 2026-11-18 已执行，等待 NS 生效）</h3>
 <p>2026-11-18 已完成的步骤（Namecheap 注册 → CF zone → Pages 域 → DNS）：</p>

@@ -109,3 +109,9 @@ a { color:var(--accent-dark); }
 .qbar > i { display:block; height:100%; border-radius:999px;
   background:var(--accent); }
 .qbar.full > i { background:var(--ok); }
+
+/* language switch (i18n) */
+.langbtn { border:1px solid var(--line) !important; color:var(--muted) !important;
+  font-size:.82rem; letter-spacing:.02em; }
+.langbtn:hover { border-color:var(--accent) !important; color:var(--accent-dark) !important;
+  background:transparent !important; }
