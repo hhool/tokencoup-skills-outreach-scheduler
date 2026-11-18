@@ -21,7 +21,8 @@ schedule → execute（HTTP 表单 + CUA 通道 + wave2 SMTP）→ 日报，含 
 ```
 bin/osched.py            CLI：import / probe / project / match / queue /
                          confirm / reject / classify / dr / schedule / plan /
-                         execute / cua / verify / report / client-report / asset / stats
+                         execute / cua / verify / report / client-report /
+                         account / mail-verify / asset / stats
 config/global.example.yaml   配置模板——复制为 config/global.yaml
 src/osched/
   config.py              YAML 配置 + env 凭据，fail-fast
@@ -40,6 +41,7 @@ src/osched/
   verify.py              实链回访台账（B1）
   report.py              五段式日报（§8）
   client_report.py       客户周期报告（B2）
+  accounts.py            目录账号台账 + IMAP 收验证信（B3）
 tools/private_scan.py    私有信息提交前扫描闸
 import/                  WDC 收割基线代码（原样复制；见 import/README.zh.md）
 scripts/daily.sh         cron 入口：pipeline / run 两段

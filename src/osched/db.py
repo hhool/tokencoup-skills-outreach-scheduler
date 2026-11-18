@@ -86,6 +86,24 @@ CREATE TABLE IF NOT EXISTS project_asset (
   UNIQUE(project_id, kind)
 );
 
+-- Directory account ledger (business layer B3): register-first directories
+-- need accounts before submission. Credentials live ONLY in the gitignored
+-- data_root sqlite (never in the repo).
+CREATE TABLE IF NOT EXISTS account (
+  id           INTEGER PRIMARY KEY AUTOINCREMENT,
+  project_id   INTEGER NOT NULL REFERENCES project(id),
+  dir_domain   TEXT NOT NULL,
+  email        TEXT NOT NULL,          -- registration-role mailbox
+  username     TEXT,
+  password     TEXT,                   -- ledger only; masked in all output
+  status       TEXT NOT NULL DEFAULT 'pending-activation',
+               -- pending-activation | active | expired | banned
+  registered_at TEXT,
+  last_used_at TEXT,
+  note         TEXT,
+  UNIQUE(project_id, dir_domain, email)
+);
+
 -- Live-link verification (business layer B1): submission != live link.
 -- Latest verdict per plan; full check history lives in run_log.
 CREATE TABLE IF NOT EXISTS link_verify (

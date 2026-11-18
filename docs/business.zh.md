@@ -92,6 +92,7 @@ WDC 竞品收割从手动导入升级为定时刷新：新目录自动入池 →
 | 功能层（import→report、cron、CUA） | 已交付并推送 |
 | **B1 实链台账**（verify CLI、link_verify 表、plan 新状态 live、已接入 daily.sh run） | **已交付** |
 | **B2 客户报告**（client-report CLI、client_report.py、项目级 report.email） | **已交付**——实发已验证 |
+| **B3 账号生命周期（一期：台账 + 收验证信）**（account 表、account add/list、mail-verify IMAP、已接入 daily.sh run） | **已交付**——真实 Gmail 收件箱扫描、激活链接提取成功；激活点击（CUA）为下一片 |
 | OPR DR 富化 | 待 IP 绑定决策（VPN 出口，暂挂） |
 | wave2 SMTP 实发 | 就绪；等第一条 wave2 计划 |
 | 真站全链路 | pending 队列有 v3/v2 验证码候选 |

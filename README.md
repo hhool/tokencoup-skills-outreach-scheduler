@@ -33,7 +33,7 @@ Chinese version: see `README.zh.md`.
 bin/osched.py            CLI: import / probe / project / match / queue /
                          confirm / reject / classify / dr / schedule / plan /
                          execute / cua / verify / report / client-report /
-                         asset / stats
+                         account / mail-verify / asset / stats
 config/global.example.yaml   config template — copy to config/global.yaml
 src/osched/
   config.py              YAML config + env-file credentials, fail-fast
@@ -52,6 +52,7 @@ src/osched/
   verify.py              live-link re-visit ledger (B1)
   report.py              five-section daily report (§8)
   client_report.py       client-facing periodic report (B2)
+  accounts.py            directory account ledger + IMAP verification-mail fetch (B3)
 tools/private_scan.py    private-information pre-commit gate
 import/                  baseline WDC harvest code (copied as-is; see import/README.md)
 scripts/daily.sh         cron entry: pipeline & run segments

@@ -44,6 +44,7 @@ from osched import classify as classify_mod
 from osched import scheduler as sched_mod
 from osched import executor as exec_mod
 from osched import client_report as client_report_mod
+from osched import accounts as accounts_mod
 from osched import report as report_mod
 from osched import cua as cua_mod
 from osched import verify as verify_mod
@@ -336,6 +337,43 @@ def cmd_asset(cfg: dict, domain: str, kind: str, content: str) -> int:
     return 0
 
 
+def cmd_account(cfg: dict, action: str, domain: str, args) -> int:
+    conn = connect(data_root(cfg))
+    project = _get_project(cfg, conn, domain)
+    if action == "add":
+        row_id = accounts_mod.add_account(
+            conn, project["_id"], args.dir_domain, args.email,
+            username=args.username or "", password=args.password or "",
+            status=args.status, note=args.note or "")
+        print(f"account set: {domain} / {args.dir_domain} / "
+              f"{args.email} (id={row_id}, status={args.status})")
+        return 0
+    if action == "list":
+        for r in accounts_mod.list_accounts(conn, project["_id"]):
+            print(f"  {r['project']:<28} {r['dir_domain']:<28} "
+                  f"{r['email']:<32} {r['username']:<12} "
+                  f"pw={r['password']:<10} {r['status']}")
+        return 0
+    print(f"unknown account action: {action}", file=__import__('sys').stderr)
+    return 2
+
+
+def cmd_mail_verify(cfg: dict, domain: str, days: int, limit: int) -> int:
+    conn = connect(data_root(cfg))
+    project = _get_project(cfg, conn, domain)
+    out = accounts_mod.fetch_verification_mails(conn, cfg, project,
+                                                days=days, limit=limit)
+    meta = {k: v for k, v in out.items() if k != "items"}
+    print("mail-verify: " + json.dumps(meta, ensure_ascii=False))
+    for it in out.get("items", []):
+        links = it["links"][0] if it["links"] else ""
+        codes = ",".join(it["codes"]) or "-"
+        flag = " ACTIVATED" if it["activated"] else ""
+        print(f"  from={it['from']:<28} code={codes:<12} "
+              f"{links[:60]}{flag} | {it['subject']}")
+    return 0
+
+
 def cmd_client_report(cfg: dict, domain: str, days: int, ref: str | None,
                       dry_run: bool) -> int:
     conn = connect(data_root(cfg))
@@ -465,6 +503,24 @@ def main(argv: list[str] | None = None) -> int:
     p_crep.add_argument("--ref", default=None, help="period end date (ISO)")
     p_crep.add_argument("--dry-run", action="store_true",
                         help="print only, never send")
+    p_acc = sub.add_parser("account", help="directory account ledger (B3)")
+    p_acc.add_argument("action", choices=["add", "list"])
+    p_acc.add_argument("domain", help="project domain")
+    p_acc.add_argument("dir_domain", nargs="?", default="",
+                       help="(add) directory domain")
+    p_acc.add_argument("--email", default="")
+    p_acc.add_argument("--username", default="")
+    p_acc.add_argument("--password", default="")
+    p_acc.add_argument("--status", default="pending-activation",
+                       choices=["pending-activation", "active", "expired",
+                                "banned"])
+    p_acc.add_argument("--note", default="")
+    p_mv = sub.add_parser("mail-verify",
+                          help="IMAP fetch of verification mails (B3)")
+    p_mv.add_argument("domain")
+    p_mv.add_argument("--days", type=int, default=3,
+                      help="scan mails since N days ago")
+    p_mv.add_argument("--limit", type=int, default=50)
     sub.add_parser("stats", help="pool summary")
     args = ap.parse_args(argv)
 
@@ -506,6 +562,10 @@ def main(argv: list[str] | None = None) -> int:
     if args.cmd == "client-report":
         return cmd_client_report(cfg, args.domain, args.days, args.ref,
                                  args.dry_run)
+    if args.cmd == "account":
+        return cmd_account(cfg, args.action, args.domain, args)
+    if args.cmd == "mail-verify":
+        return cmd_mail_verify(cfg, args.domain, args.days, args.limit)
     if args.cmd == "stats":
         return cmd_stats(cfg)
     return 2
