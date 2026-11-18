@@ -8,6 +8,13 @@
 |---------|-------------|---------|
 | `run`   | `execute` every active project (due plans only) + `report` | daily, at `scheduler.run_at` (default 09:30) |
 | `pipeline` | `import -> probe -> classify -> dr -> match -> schedule` | weekly, or after new source data lands |
+| `client-report` (CLI, not a daily.sh segment) | per-project client-facing report (B2): live-link list, activity, decisions | weekly (`--days 7`) or monthly (`--days 30`) |
+
+Weekly client report via cron:
+
+```
+0 10 * * 1 /path/to/outreach-scheduler/bin/osched.py client-report <project-domain> --days 7 >> /tmp/osched.cron.log 2>&1
+```
 
 Install (crontab -e):
 
