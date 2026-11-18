@@ -4,7 +4,9 @@
 
 英文版见 `README.md`。
 
-**状态：Phase 1（导入链路）已完成 —— 完整设计见 `DESIGN.zh.md`。**
+**状态：功能层已交付——import → probe → classify → match（人工闸）→
+schedule → execute（HTTP 表单 + CUA 通道 + wave2 SMTP）→ 日报，含 cron
+接线。架构见 `DESIGN.zh.md`，运维与业务路线图见 [docs](docs/README.zh.md)。**
 
 ## 硬规则
 
@@ -17,31 +19,46 @@
 ## 目录结构
 
 ```
-bin/osched.py            CLI 入口（import / stats）
+bin/osched.py            CLI：import / probe / project / match / queue /
+                         confirm / reject / classify / dr / schedule / plan /
+                         execute / cua / report / asset / stats
 config/global.example.yaml   配置模板——复制为 config/global.yaml
 src/osched/
   config.py              YAML 配置 + env 凭据，fail-fast
   models.py              SourceRecord——统一导入模型（DESIGN.zh.md §4b）
   adapters/base.py       SourceAdapter 抽象接口（只读、惰性）
   adapters/wdc.py        wdc_competitor_links 适配器
-  db.py                  SQLite 五表：pool/project/match/plan/run_log
+  db.py                  SQLite 七表：pool/project/match/plan/run_log/
+                         probe_cache/project_asset
   pool.py                导入管线（按 domain+url 去重）
+  probe.py               HTTP 探测：提交入口、验证码识别、probe_cache
+  classify.py            站点/提交类型、wave 与分类规则、DR 富化
+  matching.py            打分、项目配置、落地 URL 选择
+  scheduler.py           计划排期生成 + due_today 工作清单
+  executor.py            计划执行：wave1 HTTP、验证码路由、wave2 SMTP
+  cua.py                 CUA 通道：真实 Chrome 处理验证码类提交
+  report.py              五段式日报（§8）
 tools/private_scan.py    私有信息提交前扫描闸
 import/                  WDC 收割基线代码（原样复制；见 import/README.zh.md）
+scripts/daily.sh         cron 入口：pipeline / run 两段
+docs/                    接单 / 运维 / 业务路线图（见 docs/README.zh.md）
 ```
 
 ## 快速开始
 
 ```bash
 cp config/global.example.yaml config/global.yaml   # 然后改路径
-cp config/secrets/smtp.env.example config/secrets/smtp.env   # 需要邮件汇报时
 python3 bin/osched.py import                        # 适配器 -> 池
 python3 bin/osched.py stats                         # 池摘要
 ```
 
+全流程：`docs/operations.zh.md`（cron）· `docs/client-intake.zh.md`
+（接单）· `docs/business.zh.md`（下一步做什么）。
+
 ## 路线图（DESIGN.zh.md §10）
 
-- Phase 2：探测（入口/表单/验证码类型/联系邮箱识别）+ 分类
-- Phase 3：项目匹配 + 人工确认队列
-- Phase 4：排期执行器 + wave1 表单直投（HTTP 优先）+ wave2 SMTP
-- Phase 5：每日邮件汇报；DR 用 Open PageRank 免费层
+- [x] Phase 2：探测（入口/表单/验证码类型/联系邮箱识别）+ 分类
+- [x] Phase 3：项目匹配 + 人工确认队列
+- [x] Phase 4：排期执行器 + wave1 表单直投（HTTP 优先）+ wave2 SMTP
+- [x] Phase 5：每日邮件汇报；DR 用 Open PageRank 免费层
+- 下一阶段：业务层 B1–B6——见 docs/business.zh.md

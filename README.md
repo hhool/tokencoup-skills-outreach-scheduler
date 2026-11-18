@@ -7,7 +7,10 @@ periodic schedule, and email a daily report.
 
 Chinese version: see `README.zh.md`.
 
-**Status: Phase 1 (import pipeline) — see `DESIGN.md` for the full design.**
+**Status: functional layer shipped — import → probe → classify → match
+(human gate) → schedule → execute (HTTP form + CUA channel + wave2 SMTP)
+→ daily report, with cron wiring. See `DESIGN.md` for architecture and
+[docs](docs/README.md) for operations & the business roadmap.**
 
 ## Hard rules
 
@@ -27,31 +30,46 @@ Chinese version: see `README.zh.md`.
 ## Layout
 
 ```
-bin/osched.py            CLI entry (import / stats)
+bin/osched.py            CLI: import / probe / project / match / queue /
+                         confirm / reject / classify / dr / schedule / plan /
+                         execute / cua / report / asset / stats
 config/global.example.yaml   config template — copy to config/global.yaml
 src/osched/
   config.py              YAML config + env-file credentials, fail-fast
   models.py              SourceRecord — unified import model (DESIGN.md §4b)
   adapters/base.py       SourceAdapter abstract interface (read-only, lazy)
   adapters/wdc.py        wdc_competitor_links adapter
-  db.py                  SQLite schema: pool/project/match/plan/run_log
+  db.py                  SQLite schema: pool/project/match/plan/run_log/
+                         probe_cache/project_asset
   pool.py                import pipeline (dedupe by domain+url)
+  probe.py               HTTP probe: submit endpoints, captcha typing, cache
+  classify.py            site/submit type, wave & category rules, DR enrich
+  matching.py            scoring, project config, landing-URL selection
+  scheduler.py           dated plan generation + due_today worklist
+  executor.py            plan execution: wave1 HTTP, captcha routing, wave2 SMTP
+  cua.py                 CUA channel: real-Chrome captcha-class submission
+  report.py              five-section daily report (§8)
 tools/private_scan.py    private-information pre-commit gate
 import/                  baseline WDC harvest code (copied as-is; see import/README.md)
+scripts/daily.sh         cron entry: pipeline & run segments
+docs/                    client-intake / operations / business roadmap (see docs/README.md)
 ```
 
 ## Quick start
 
 ```bash
 cp config/global.example.yaml config/global.yaml   # then edit paths
-cp config/secrets/smtp.env.example config/secrets/smtp.env   # when email report is needed
 python3 bin/osched.py import                        # adapters -> pool
 python3 bin/osched.py stats                         # pool summary
 ```
 
+Full loop: `docs/operations.md` (cron) · `docs/client-intake.md`
+(onboarding) · `docs/business.md` (what to build next).
+
 ## Roadmap (DESIGN.md §10)
 
-- Phase 2: probe (entry/form/captcha-type/contact detection) + classify
-- Phase 3: project matching + human confirmation queue
-- Phase 4: plan scheduler + wave1 form submit (HTTP-first) + wave2 SMTP
-- Phase 5: daily report email; DR via Open PageRank (free tier)
+- [x] Phase 2: probe (entry/form/captcha-type/contact detection) + classify
+- [x] Phase 3: project matching + human confirmation queue
+- [x] Phase 4: plan scheduler + wave1 form submit (HTTP-first) + wave2 SMTP
+- [x] Phase 5: daily report email; DR via Open PageRank (free tier)
+- Next: business layer B1–B6 — see docs/business.md
