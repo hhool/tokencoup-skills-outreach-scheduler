@@ -9,7 +9,8 @@ primary_region = "hkg"                 # pick a region; note OPR IP binding!
 [env]
   OSCHED_DATA_ROOT = "/data"
   OSCHED_CONFIG = "/data/config/global.yaml"   # config lives on the volume
-  PORTAL_BASE_URL = "https://<your-app>.fly.dev"  # verification-mail links
+  PORTAL_BASE_URL = "https://<your-app>.fly.dev"  # verification-mail links + OAuth redirect_uri base
+  PORTAL_FRONTEND_URL = "https://<your-spa>/app/"  # OAuth handoff target (one-time code -> SPA)
   PORTAL_ADMIN_EMAILS = "<super-admin@example.com>"  # seeds admin_whitelist at boot
   TZ = "Asia/Shanghai"                # supercronic times follow TZ
 

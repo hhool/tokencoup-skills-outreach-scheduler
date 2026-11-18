@@ -70,6 +70,7 @@ function card(html) { return `<div class="card">${html}</div>`; }
 const routes = {
   "#/login": pageAuth, "#/dashboard": pageDashboard,
   "#/reports": pageReports, "#/new": pageNew, "#/admin": pageAdmin,
+  "#/oauth": pageOAuth,
 };
 
 async function render() {
@@ -84,8 +85,20 @@ async function render() {
 window.addEventListener("hashchange", render);
 
 // ---------------------------------------------------------------- auth
+async function oauthStatus() {
+  try { return await api("/api/oauth/status"); }
+  catch (e) { return { google: false, facebook: false }; }
+}
+
 async function pageAuth() {
   if (token) { location.hash = "#/dashboard"; return; }
+  const st = await oauthStatus();
+  const gbtn = st.google
+    ? `<a class="oauthbtn" href="${API_BASE}/auth/google">Sign in with Google</a>`
+    : `<button type="button" disabled title="Google sign-in not configured yet">Sign in with Google</button>`;
+  const fbtn = st.facebook
+    ? `<a class="oauthbtn" href="${API_BASE}/auth/facebook">Sign in with Facebook</a>`
+    : `<button type="button" disabled title="Facebook sign-in not configured yet">Sign in with Facebook</button>`;
   $app.innerHTML = `
   <h1>Client portal</h1>
   <div id="notice"></div>
@@ -93,9 +106,8 @@ async function pageAuth() {
     <form onsubmit="return doLogin(event)">
       <p><input name="email" placeholder="email" required></p>
       <p><input name="password" type="password" placeholder="password" required></p>
-      <p class="row"><button type="submit">Log in</button>
-        <button type="button" disabled title="OAuth callback domain pending">Sign in with Google</button>
-        <button type="button" disabled title="developer app review pending">Sign in with Facebook</button></p>
+      <p class="row"><button type="submit">Log in</button></p>
+      <p class="row">${gbtn} ${fbtn}</p>
     </form>`)}
   ${card(`<h2>Create an account</h2>
     <p class="muted">Registration sends a verification mail; verifying
@@ -106,6 +118,25 @@ async function pageAuth() {
          placeholder="password (min 8 chars)" required minlength="8"></p>
       <p><button type="submit">Register</button></p>
     </form>`)}`;
+}
+
+// OAuth handoff: backend redirects here with a one-time code in the
+// hash fragment; exchange it for the session token (token never in a URL).
+async function pageOAuth(hash) {
+  const m = /c=([^&]+)/.exec(hash || "");
+  if (!m) {
+    $app.innerHTML = card("<p class='warn'>Missing sign-in code.</p>");
+    return;
+  }
+  try {
+    const d = await api("/api/oauth/exchange", { method: "POST",
+      body: JSON.stringify({ code: decodeURIComponent(m[1]) }) });
+    setToken(d.token, d.role, d.email);
+    location.hash = "#/dashboard";
+  } catch (e) {
+    $app.innerHTML = card(`<p class="warn">Sign-in failed: ${esc(e.message)}</p>
+      <p><a href="#/login">Back to login</a></p>`);
+  }
 }
 window.doLogin = async ev => {
   ev.preventDefault();

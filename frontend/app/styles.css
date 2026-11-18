@@ -87,3 +87,7 @@ footer { text-align:center; padding:22px; color:var(--muted); font-size:.88rem; 
 footer b { color:var(--accent-dark); }
 .row { display:flex; gap:10px; align-items:center; flex-wrap:wrap; }
 a { color:var(--accent-dark); }
+.oauthbtn { display:inline-block; padding:9px 20px; border-radius:999px;
+  background:var(--accent-soft); color:var(--accent-dark); font-weight:650;
+  font-size:.92rem; text-decoration:none; transition:background .15s; }
+.oauthbtn:hover { background:color-mix(in srgb, var(--accent) 25%, transparent); }

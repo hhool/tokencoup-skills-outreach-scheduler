@@ -1,10 +1,11 @@
-"""Client portal (business docs client-portal.md §1–§2, skeleton phase).
+"""Client portal (business docs client-portal.md §1–§2).
 
 Stdlib-only HTTP server, single process, shares the scheduler's sqlite
 in read-only fashion for delivery-side tables. Portal-owned writes are
 exactly: client identity, sessions, project requests (docs §4 write-path
-discipline). OAuth buttons are stubs in this phase (Google first when
-callback domain exists).
+discipline). OAuth (Google/Facebook) uses the authorization-code flow on
+the backend with a one-time handoff code to the SPA — session tokens
+never appear in URLs.
 
 Routes:
   GET  /                login/register page (EN default)
@@ -30,7 +31,7 @@ import sys
 import urllib.request
 from datetime import datetime, timedelta
 from http.server import BaseHTTPRequestHandler, HTTPServer
-from urllib.parse import parse_qs, urlparse
+from urllib.parse import parse_qs, urlencode, urlparse
 
 from .db import connect as db_connect
 from .report import send_mail
@@ -82,6 +83,12 @@ CREATE TABLE IF NOT EXISTS admin_whitelist (
   email    TEXT PRIMARY KEY,
   note     TEXT,
   added_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE TABLE IF NOT EXISTS oauth_handoff (
+  code          TEXT PRIMARY KEY,       -- one-time code handed to the SPA
+  session_token TEXT NOT NULL REFERENCES client_session(token),
+  expires_at    TEXT NOT NULL
 );
 """
 
@@ -185,6 +192,135 @@ def _client_from_session(conn, token: str | None):
            WHERE s.token=? AND s.expires_at > datetime('now')""",
         (token,)).fetchone()
     return row
+
+
+# --------------------------------------------------------------------------
+# OAuth (Google / Facebook) — authorization-code flow, stdlib only.
+# The callback lives on the backend (PORTAL_BASE_URL); the SPA receives a
+# one-time handoff code via URL fragment, exchanged through the JSON API,
+# so the session token never appears in a URL.
+# --------------------------------------------------------------------------
+
+OAUTH_STATE_COOKIE = "osched_ostate"
+OAUTH_STATE_MAX_AGE = 600          # 10 minutes
+HANDOFF_TTL_MINUTES = 5
+
+OAUTH_ENDPOINTS = {
+    "google": {
+        "authorize": "https://accounts.google.com/o/oauth2/v2/auth",
+        "token": "https://oauth2.googleapis.com/token",
+        "scope": "openid email profile",
+    },
+    "facebook": {
+        "authorize": "https://www.facebook.com/v19.0/dialog/oauth",
+        "token": ("https://graph.facebook.com/v19.0/oauth/access_token"
+                  "?client_id={cid}&redirect_uri={ruri}&code={code}"),
+        "scope": "email,public_profile",
+    },
+}
+
+
+def _oauth_cfg(cfg: dict, provider: str) -> tuple[str, str]:
+    """(client_id, client_secret) from env or config portal.oauth.<p>."""
+    key = {"google": "OAUTH_GOOGLE", "facebook": "OAUTH_FACEBOOK"}[provider]
+    cid = os.environ.get(f"{key}_CLIENT_ID") or os.environ.get(
+        f"{key}_APP_ID") or ""
+    csec = os.environ.get(f"{key}_CLIENT_SECRET") or os.environ.get(
+        f"{key}_APP_SECRET") or ""
+    block = cfg.get("portal", {}).get("oauth", {}).get(provider) or {}
+    cid = cid or block.get("client_id") or block.get("app_id") or ""
+    csec = csec or block.get("client_secret") or block.get("app_secret") or ""
+    return cid.strip(), csec.strip()
+
+
+def _oauth_redirect_uri(cfg: dict, provider: str) -> str:
+    base = (os.environ.get("PORTAL_BASE_URL")
+            or cfg.get("portal", {}).get("base_url")
+            or "http://127.0.0.1:8090").rstrip("/")
+    return f"{base}/auth/{provider}/callback"
+
+
+def _http_json(url: str, data: dict | None = None) -> dict:
+    """POST form (if data) or GET url, parse JSON. Raises on HTTP errors."""
+    if data is not None:
+        req = urllib.request.Request(
+            url, data=urlencode(data).encode(), method="POST")
+    else:
+        req = urllib.request.Request(url)
+    with urllib.request.urlopen(req, timeout=15) as resp:
+        return json.loads(resp.read().decode())
+
+
+def _oauth_exchange_code(cfg: dict, provider: str, code: str,
+                         redirect_uri: str) -> dict:
+    """Trade the auth code for provider identity {sub, email}."""
+    cid, csec = _oauth_cfg(cfg, provider)
+    ep = OAUTH_ENDPOINTS[provider]
+    if provider == "google":
+        tok = _http_json(ep["token"], {
+            "code": code, "client_id": cid, "client_secret": csec,
+            "redirect_uri": redirect_uri, "grant_type": "authorization_code"})
+        idt = (tok.get("id_token") or "").split(".")
+        if len(idt) < 2:
+            raise RuntimeError("token response missing id_token")
+        pad = idt[1] + "=" * (-len(idt[1]) % 4)
+        claims = json.loads(__import__("base64").urlsafe_b64decode(pad))
+        return {"sub": claims.get("sub") or "", "email": claims.get("email")}
+    # facebook
+    tok_url = ep["token"].format(cid=cid, ruri=redirect_uri, code=code)
+    tok = _http_json(tok_url)
+    access = tok.get("access_token") or ""
+    me = _http_json("https://graph.facebook.com/me"
+                    "?fields=id,name,email&access_token=" + access)
+    return {"sub": me.get("id") or "", "email": me.get("email")}
+
+
+def _oauth_upsert_client(conn, provider: str, sub: str, email: str):
+    """Find or create the client for an OAuth identity.
+
+    OAuth emails count as verified (providers verify mailbox ownership).
+    Existing clients keep their password; provider identity is linked.
+    Whitelist membership still governs the admin role.
+    """
+    email = (email or "").strip().lower()
+    if not email:
+        raise RuntimeError(f"{provider} account has no verified email — "
+                           "use e-mail registration instead.")
+    row = conn.execute("SELECT * FROM client WHERE email=?",
+                       (email,)).fetchone()
+    if row:
+        conn.execute("UPDATE client SET verified=1, oauth_provider=?, "
+                     "oauth_sub=? WHERE id=?",
+                     (provider, sub, row["id"]))
+        conn.commit()
+        return row["id"]
+    conn.execute(
+        """INSERT INTO client(email, password_hash, verified,
+           oauth_provider, oauth_sub, role)
+           VALUES(?, ?, 1, ?, ?,
+             CASE WHEN ? IN (SELECT email FROM admin_whitelist)
+               THEN 'admin' ELSE 'client' END)""",
+        (email, f"oauth!{provider}:{secrets.token_urlsafe(24)}",
+         provider, sub, email))
+    conn.commit()
+    return conn.execute("SELECT id FROM client WHERE email=?",
+                        (email,)).fetchone()["id"]
+
+
+def _new_handoff(conn, session_token: str) -> str:
+    code = secrets.token_urlsafe(24)
+    exp = (datetime.utcnow()
+           + timedelta(minutes=HANDOFF_TTL_MINUTES)).isoformat()
+    conn.execute("DELETE FROM oauth_handoff WHERE expires_at < datetime('now')")
+    conn.execute("INSERT INTO oauth_handoff(code, session_token, expires_at) "
+                 "VALUES(?,?,?)", (code, session_token, exp))
+    conn.commit()
+    return code
+
+
+def _frontend_url(cfg: dict) -> str:
+    return (os.environ.get("PORTAL_FRONTEND_URL")
+            or cfg.get("portal", {}).get("frontend_url") or "").rstrip("/")
 
 
 # --------------------------------------------------------------------------
@@ -559,13 +695,16 @@ class PortalHandler(BaseHTTPRequestHandler):
                 return v
         return None
 
-    def _redirect(self, location: str, cookie: str | None = None) -> None:
+    def _redirect(self, location: str, cookie: str | None = None,
+                  extra_cookie: str | None = None) -> None:
         self.send_response(303)
         self.send_header("Location", location)
         if cookie:
             self.send_header("Set-Cookie",
                              f"osched_session={cookie}; HttpOnly; SameSite=Lax; "
                              f"Path=/; Max-Age={SESSION_DAYS * 86400}")
+        if extra_cookie:
+            self.send_header("Set-Cookie", extra_cookie)
         self.end_headers()
 
     def _html(self, body: str, title: str = "client portal",
@@ -607,6 +746,14 @@ class PortalHandler(BaseHTTPRequestHandler):
             self._page_new()
         elif path == "/admin":
             self._page_admin()
+        elif path == "/auth/google":
+            self._oauth_start("google")
+        elif path == "/auth/google/callback":
+            self._oauth_callback("google")
+        elif path == "/auth/facebook":
+            self._oauth_start("facebook")
+        elif path == "/auth/facebook/callback":
+            self._oauth_callback("facebook")
         elif path == "/logout":
             tok = self._cookie("osched_session")
             if tok:
@@ -619,15 +766,28 @@ class PortalHandler(BaseHTTPRequestHandler):
 
     def _page_home(self, notice: str = "", email: str = ""):
         notice_html = f"<p class='ok'>{_esc(notice)}</p>" if notice else ""
+        g, f = _oauth_cfg(self.cfg, "google")[0], \
+            _oauth_cfg(self.cfg, "facebook")[0]
+        gbtn = (f"<a href='/auth/google' style='padding:8px 12px;"
+                f"border-radius:6px;background:var(--code);color:var(--text);"
+                f"text-decoration:none'>Sign in with Google</a>")
+        fbtn = (f"<a href='/auth/facebook' style='padding:8px 12px;"
+                f"border-radius:6px;background:var(--code);color:var(--text);"
+                f"text-decoration:none'>Sign in with Facebook</a>")
+        if not g:
+            gbtn = ("<button type='button' disabled title='not configured'>"
+                    "Sign in with Google</button>")
+        if not f:
+            fbtn = ("<button type='button' disabled title='not configured'>"
+                    "Sign in with Facebook</button>")
         body = f"""
         {notice_html}
         <div class='card'><h2>Log in</h2>
         <form method='post' action='/login'>
           <p><input name='email' placeholder='email' value='{_esc(email)}' required></p>
           <p><input name='password' type='password' placeholder='password' required></p>
-          <p><button type='submit'>Log in</button>
-             <button type='button' disabled title='OAuth callback domain pending'>Sign in with Google</button>
-             <button type='button' disabled title='developer app review pending'>Sign in with Facebook</button></p>
+          <p>{gbtn} {fbtn}</p>
+          <p><button type='submit'>Log in</button></p>
         </form></div>
         <div class='card'><h2>Create an account</h2>
         <p class='muted'>Registration sends a verification mail; verifying
@@ -879,6 +1039,7 @@ class PortalHandler(BaseHTTPRequestHandler):
                     "/api/reports": self._api_reports,
                     "/api/requests": self._api_requests,
                     "/api/admin": self._api_admin,
+                    "/api/oauth/status": self._api_oauth_status,
                 }
             else:
                 routes = {
@@ -888,6 +1049,7 @@ class PortalHandler(BaseHTTPRequestHandler):
                     "/api/new": self._api_new,
                     "/api/verify-domain": self._api_verify_domain,
                     "/api/admin": self._api_admin_post,
+                    "/api/oauth/exchange": self._api_oauth_exchange,
                 }
             fn = routes.get(path)
             if fn:
@@ -1033,6 +1195,32 @@ class PortalHandler(BaseHTTPRequestHandler):
             self.conn.commit()
         self._api_send({"ok": True})
 
+    def _api_oauth_status(self):
+        g = bool(_oauth_cfg(self.cfg, "google")[0])
+        f = bool(_oauth_cfg(self.cfg, "facebook")[0])
+        self._api_send({"google": g, "facebook": f})
+
+    def _api_oauth_exchange(self):
+        length = int(self.headers.get("Content-Length") or 0)
+        raw = self.rfile.read(length).decode("utf-8", "replace")
+        body = json.loads(raw or "{}")
+        code = str(body.get("code") or "")
+        row = self.conn.execute(
+            """SELECT h.*, s.client_id FROM oauth_handoff h
+               JOIN client_session s ON s.token=h.session_token
+               WHERE h.code=? AND h.expires_at > datetime('now')""",
+            (code,)).fetchone()
+        if not row:
+            self._api_send({"ok": False,
+                            "error": "invalid or expired sign-in code"}, 400)
+            return
+        self.conn.execute("DELETE FROM oauth_handoff WHERE code=?", (code,))
+        self.conn.commit()
+        client = self.conn.execute("SELECT * FROM client WHERE id=?",
+                                   (row["client_id"],)).fetchone()
+        self._api_send({"ok": True, "token": row["session_token"],
+                        "role": client["role"], "email": client["email"]})
+
     def _api_admin(self):
         client = self._api_auth()
         if not client or client["role"] != "admin":
@@ -1068,6 +1256,68 @@ class PortalHandler(BaseHTTPRequestHandler):
                                quota_total=body.get("quota_total"),
                                email=body.get("email"))
         self._api_send({"ok": ok, "message": msg}, 200 if ok else 400)
+
+    # -- OAuth (Google / Facebook) -----------------------------------------
+
+    def _oauth_error(self, msg: str) -> None:
+        self._html(f"<h1>Sign-in failed</h1><p class='warn'>{_esc(msg)}</p>"
+                   f"<p><a href='/'>Back to login</a></p>", title="oauth")
+
+    def _oauth_start(self, provider: str) -> None:
+        cid, _ = _oauth_cfg(self.cfg, provider)
+        if not cid:
+            self._oauth_error(
+                f"{provider} sign-in is not configured on this deployment.")
+            return
+        state = secrets.token_urlsafe(16)
+        cookie = (f"{OAUTH_STATE_COOKIE}={state}; HttpOnly; SameSite=Lax; "
+                  f"Path=/; Max-Age={OAUTH_STATE_MAX_AGE}")
+        ep = OAUTH_ENDPOINTS[provider]
+        qs = urlencode({
+            "client_id": cid,
+            "redirect_uri": _oauth_redirect_uri(self.cfg, provider),
+            "response_type": "code",
+            "scope": ep["scope"],
+            "state": state,
+            **({"prompt": "select_account"} if provider == "google" else {}),
+        })
+        self._redirect(f"{ep['authorize']}?{qs}", extra_cookie=cookie)
+
+    def _oauth_callback(self, provider: str) -> None:
+        qs = parse_qs(urlparse(self.path).query)
+        state = (qs.get("state") or [""])[0]
+        cookie_state = self._cookie(OAUTH_STATE_COOKIE) or ""
+        # consume the state cookie regardless of outcome (single use)
+        expire = (f"{OAUTH_STATE_COOKIE}=; HttpOnly; SameSite=Lax; Path=/; "
+                  f"Max-Age=0")
+        if not state or state != cookie_state:
+            self._redirect("/", extra_cookie=expire)
+            return
+        code = (qs.get("code") or [""])[0]
+        if not code:
+            err = (qs.get("error_description") or qs.get("error")
+                   or ["provider denied the request"])[0]
+            self._oauth_error(str(err)[:200])
+            return
+        try:
+            ident = _oauth_exchange_code(
+                self.cfg, provider, code,
+                _oauth_redirect_uri(self.cfg, provider))
+            client_id = _oauth_upsert_client(
+                self.conn, provider, ident["sub"], ident["email"])
+        except Exception as e:  # noqa: BLE001 — render as user-facing page
+            self._oauth_error(str(e)[:200])
+            return
+        tok = _new_session(self.conn, client_id)
+        frontend = _frontend_url(self.cfg)
+        if frontend:
+            handoff = _new_handoff(self.conn, tok)
+            self._redirect(f"{frontend}/#/oauth?c={handoff}",
+                           extra_cookie=expire)
+            return
+        # legacy HTML portal on the backend domain — cookie works directly
+        self._redirect("/dashboard", cookie=tok, extra_cookie=expire)
+
 
     # -- super admin (whitelist privileges) --------------------------------
 
