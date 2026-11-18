@@ -28,6 +28,7 @@ primary_region = "hkg"                 # pick a region; note OPR IP binding!
   force_https = true
   auto_stop_machines = false     # cron must keep running
   auto_start_machines = true
+  processes = ["app"]
   [http_service.concurrency]
     type = "requests"
 

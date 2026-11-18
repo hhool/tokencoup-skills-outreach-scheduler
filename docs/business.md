@@ -172,8 +172,27 @@ pricing, packaging and the captcha-replacement plan.
    by the 友链 ecosystem instead. Treat domestic as a possible supply or
    resale channel, not a product market.
 
-### Pricing implication (draft)
+### Pricing (ratified 2026-11-18)
 
-Anchor 2B service pricing to the delivered-link unit, not subscription:
-per-live-link pricing at a discount to the $100–500/link SaaS ceiling,
-with the live-link ledger as the receipt that justifies the invoice.
+Model: **pay per delivered live link, no subscription.** Packaged as a
+monthly credit allowance — `quota_total` = package size, only `live`
+verdicts consume credits (portal View A implements this).
+
+Anchor: Respona-class SaaS at $100–500/link; done-for-you agencies at
+per-link rates with manual QA. Our position: **cheaper per live link than
+the SaaS tier, harder proof than the agency tier** (the live-link ledger
+plus client report is the invoice receipt — only verified-live links are
+billed).
+
+Tiers (recommended defaults, numbers adjustable):
+
+| tier | monthly volume | price per live link | notes |
+|------|----------------|--------------------:|-------|
+| Trial | 3 links | free | portal self-serve, 14-day window, 1 per verified domain |
+| Starter | 1–9 links | $80 | below the $100–500 anchor floor |
+| Growth | 10–49 links | $65 | main commercial tier |
+| Scale | 50+ links | $50 | volume floor; covers pool-marginal quality |
+
+Service guarantee: a link that never reaches `live` after auto-retry +
+human fallback is **not billed**. Non-live states (`missing`,
+`unreachable`, `bot-blocked`) are work-in-progress, never billed.

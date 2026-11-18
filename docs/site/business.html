@@ -305,10 +305,55 @@ pricing, packaging and the captcha-replacement plan.</p>
    by the 友链 ecosystem instead. Treat domestic as a possible supply or
    resale channel, not a product market.</li>
 </ol>
-<h3>Pricing implication (draft)</h3>
-<p>Anchor 2B service pricing to the delivered-link unit, not subscription:
-per-live-link pricing at a discount to the $100–500/link SaaS ceiling,
-with the live-link ledger as the receipt that justifies the invoice.</p></div>
+<h3>Pricing (ratified 2026-11-18)</h3>
+<p>Model: <strong>pay per delivered live link, no subscription.</strong> Packaged as a
+monthly credit allowance — <code>quota_total</code> = package size, only <code>live</code>
+verdicts consume credits (portal View A implements this).</p>
+<p>Anchor: Respona-class SaaS at $100–500/link; done-for-you agencies at
+per-link rates with manual QA. Our position: <strong>cheaper per live link than
+the SaaS tier, harder proof than the agency tier</strong> (the live-link ledger
+plus client report is the invoice receipt — only verified-live links are
+billed).</p>
+<p>Tiers (recommended defaults, numbers adjustable):</p>
+<table>
+<thead>
+<tr>
+<th>tier</th>
+<th>monthly volume</th>
+<th style="text-align: right;">price per live link</th>
+<th>notes</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Trial</td>
+<td>3 links</td>
+<td style="text-align: right;">free</td>
+<td>portal self-serve, 14-day window, 1 per verified domain</td>
+</tr>
+<tr>
+<td>Starter</td>
+<td>1–9 links</td>
+<td style="text-align: right;">$80</td>
+<td>below the $100–500 anchor floor</td>
+</tr>
+<tr>
+<td>Growth</td>
+<td>10–49 links</td>
+<td style="text-align: right;">$65</td>
+<td>main commercial tier</td>
+</tr>
+<tr>
+<td>Scale</td>
+<td>50+ links</td>
+<td style="text-align: right;">$50</td>
+<td>volume floor; covers pool-marginal quality</td>
+</tr>
+</tbody>
+</table>
+<p>Service guarantee: a link that never reaches <code>live</code> after auto-retry +
+human fallback is <strong>not billed</strong>. Non-live states (<code>missing</code>,
+<code>unreachable</code>, <code>bot-blocked</code>) are work-in-progress, never billed.</p></div>
 <div data-lang-en="0" style="display:none"><h1 style="display:none">业务层 — 商业化落地路线图</h1><h1>业务层 — 商业化落地路线图</h1>
 <p><strong>定位：业务层就是商业化落地轨道。</strong> 功能层（import → probe → match →
 execute → report）是「机器」；业务层是把机器变成可售卖、可交付、可续费
@@ -525,9 +570,52 @@ SLA（每日最低提交数）与不达标预警。</p>
 <li><strong>国内市场：无目录品类。</strong> 国内需求由友链生态承接。把国内当作可能的
    供给或转售渠道，而不是产品市场。</li>
 </ol>
-<h3>定价含义（草案）</h3>
-<p>2B 服务按交付实链计价，不做订阅：以低于 $100–500/link SaaS 天花板一定
-折扣的每实链价格收费，实链台账就是支撑开票的凭证。</p></div></article></main>
+<h3>定价（2026-11-18 定稿）</h3>
+<p>模式：<strong>按交付实链计价，不做订阅。</strong> 打包为月度额度包——<code>quota_total</code>=
+套餐大小，只有 <code>live</code> 判定消耗额度（门户 View A 按此实现）。</p>
+<p>锚点：Respona 级 SaaS $100–500/link；代做服务商按条交付、人工质检。
+我们的定位：<strong>比 SaaS 档便宜的每实链价格 + 比代做档更硬的上线凭证</strong>
+（实链台账 + 客户报告就是开票凭证——只对验证上线的链接收费）。</p>
+<p>档位（推荐默认值，数字可调）：</p>
+<table>
+<thead>
+<tr>
+<th>档位</th>
+<th>月度规模</th>
+<th style="text-align: right;">每实链价格</th>
+<th>说明</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>试用</td>
+<td>3 条</td>
+<td style="text-align: right;">免费</td>
+<td>门户自助，14 天窗口，每个已验证域名 1 次</td>
+</tr>
+<tr>
+<td>入门</td>
+<td>1–9 条</td>
+<td style="text-align: right;">$80</td>
+<td>低于 $100–500 锚点下限</td>
+</tr>
+<tr>
+<td>成长</td>
+<td>10–49 条</td>
+<td style="text-align: right;">$65</td>
+<td>主力商业档</td>
+</tr>
+<tr>
+<td>规模</td>
+<td>50+ 条</td>
+<td style="text-align: right;">$50</td>
+<td>走量下限；覆盖池子边际质量</td>
+</tr>
+</tbody>
+</table>
+<p>服务保障：自动重试 + 人工兜底后仍未到 <code>live</code> 的链接<strong>不计费</strong>。
+非 live 状态（<code>missing</code>/<code>unreachable</code>/<code>bot-blocked</code>）属进行中，
+永不计费。</p></div></article></main>
 <footer>bilingual docs · built from .md sources</footer>
 <script>
 (function(){

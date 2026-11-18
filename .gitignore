@@ -37,3 +37,4 @@ Thumbs.db
 
 # --- fly.io deployment (per-app name lives here) ---
 fly.toml
+.wrangler/
