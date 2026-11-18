@@ -33,9 +33,17 @@ cp fly.toml.example fly.toml          # 改 app 名与 region
 fly volumes create osched_data --size 1 --region hkg
 fly deploy
 
-# 配置（不入仓库：含客户邮箱）
+# 配置（不入仓库：含客户邮箱）。fly.toml 里 OSCHED_CONFIG 指向卷上副本。
 fly ssh sftp shell -C "mkdir -p /data/config"
-cat config/global.yaml | fly ssh sftp shell -C "cat > /data/config/global.yaml"
+fly ssh sftp put config/global.yaml /data/config/global.yaml --app <app>
+
+# 数据快照（pool.sqlite3、projects/、sources/）——55k 池压包约 5MB；
+# 本地跑完要同步结果时重传：
+#   tar czf /tmp/osched-pool.tgz -C data pool.sqlite3
+#   fly ssh sftp put /tmp/osched-pool.tgz /tmp/osched-pool.tgz --app <app>
+#   fly ssh console -C "sh -c 'cd /data && tar xzf /tmp/osched-pool.tgz && rm /tmp/osched-pool.tgz'"
+# （注意：`fly ssh sftp shell -C "put …"` 会静默不动——用 `sftp put`；
+#  `ssh console -C` 里复合命令必须包一层 `sh -c '…'`。）
 
 # 密钥——os.environ 优先于 env 文件（require_env_key 顺序）
 # 键集合与 config/secrets/smtp.env.example 相同（SMTP 主机/端口/用户、

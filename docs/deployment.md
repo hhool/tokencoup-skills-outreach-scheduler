@@ -38,9 +38,18 @@ cp fly.toml.example fly.toml          # set your app name + region
 fly volumes create osched_data --size 1 --region hkg
 fly deploy
 
-# config (never committed: contains client mailbox addresses)
+# config (never committed: contains client mailbox addresses).
+# OSCHED_CONFIG env in fly.toml points the CLI at the volume copy.
 fly ssh sftp shell -C "mkdir -p /data/config"
-cat config/global.yaml | fly ssh sftp shell -C "cat > /data/config/global.yaml"
+fly ssh sftp put config/global.yaml /data/config/global.yaml --app <app>
+
+# data snapshot (pool.sqlite3, projects/, sources/) — 55k pool ships as
+# a ~5MB tar.gz; re-upload after local runs to sync results:
+#   tar czf /tmp/osched-pool.tgz -C data pool.sqlite3
+#   fly ssh sftp put /tmp/osched-pool.tgz /tmp/osched-pool.tgz --app <app>
+#   fly ssh console -C "sh -c 'cd /data && tar xzf /tmp/osched-pool.tgz && rm /tmp/osched-pool.tgz'"
+# (note: `fly ssh sftp shell -C "put …"` silently no-ops — use `sftp put`;
+#  inside `ssh console -C` always wrap compound commands in `sh -c '…'`.)
 
 # secrets — os.environ wins over env files (require_env_key order)
 # set the same key set as config/secrets/smtp.env.example (SMTP host/
