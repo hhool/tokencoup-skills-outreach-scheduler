@@ -132,3 +132,48 @@ role. Splitting into two mailboxes later is config-only.
 | OPR DR enrichment | pending IP binding decision (VPN exit, on hold) |
 | wave2 SMTP live send | ready; awaiting first wave2 plan |
 | real-site full run | pending queue has v3/v2 captcha candidates |
+
+---
+
+## Competitor landscape & market verdict (ratified 2026-11-18)
+
+Scope: 2C/2B × overseas/domestic. Findings from a structured sweep of the
+existing link-building tool market, distilled into judgments that constrain
+pricing, packaging and the captcha-replacement plan.
+
+### Market matrix
+
+| quadrant | incumbent examples | what they sell | verdict for us |
+|----------|-------------------|----------------|----------------|
+| overseas 2C tools | open-source scrapers/submitters, browser-automation frameworks | free self-serve tooling | do NOT compete — free/open-source saturates the low end at $0 |
+| overseas 2B SaaS | Respona, Pitchbox-style outreach platforms | per-link pricing roughly $100–500/link, campaign management | benchmark only; our differentiation is the **live-link closed loop** (submission → re-visit → verified live), which none of them productizes |
+| overseas 2B done-for-you | link-building agencies | per-link deliverables, manual QA | direct comparables for pricing our service tier |
+| domestic 2C | none in this category | — | no directory-link category exists |
+| domestic 2B | 友链 exchange ecosystems (platforms + manual trades) | friend-link placement, not directory submission | different category; not a competitor, a supply channel option |
+
+### Judgments
+
+1. **No 2C tool-selling.** The open-source tier already prices at zero; a
+   paid 2C tool has no wedge. Tooling stays internal.
+2. **Sell 2B service, priced against Resona-class SaaS.** The market anchor
+   is ~$100–500 per delivered link. Our edge is evidence: the live-link
+   ledger (B1) plus the client report (B2) prove the link exists — no
+   competitor in the sweep closes that loop automatically.
+3. **CUA replacement candidate: open-source real-Chrome engines.** The
+   ratified desktop-only captcha phase has a named successor candidate —
+   an open-source, MCP-exposed real-Chrome automation engine (the class of
+   engine behind commercial "AI browser operator" products). Interface is
+   compatible with the §7.1 routing touch point; swap is config-level.
+   Re-evaluate when commercial volume justifies it.
+4. **The pool is a durable asset.** ~55k directory pool + probe_cache
+   verdict history compounds with every run; it is the moat a new entrant
+   cannot copy by installing a tool.
+5. **Domestic market: no directory category.** Domestic demand is served
+   by the 友链 ecosystem instead. Treat domestic as a possible supply or
+   resale channel, not a product market.
+
+### Pricing implication (draft)
+
+Anchor 2B service pricing to the delivered-link unit, not subscription:
+per-live-link pricing at a discount to the $100–500/link SaaS ceiling,
+with the live-link ledger as the receipt that justifies the invoice.
