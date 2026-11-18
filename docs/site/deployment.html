@@ -159,6 +159,10 @@ fly ssh sftp put config/global.yaml /data/config/global.yaml --app &lt;app&gt;
 fly ssh console -C &quot;ls /data &amp;&amp; scripts/daily.sh run&quot;
 </code></pre>
 <p>Notes:
+- <strong>Single-VM entrypoint</strong>: <code>scripts/start.sh</code> runs supercronic in the
+  background and the client-portal HTTP server in the foreground
+  (<code>[http_service] internal_port = 8080</code>). One machine, one volume —
+  fly volumes are single-attach, so cron and portal must share the VM.
 - <strong>OPR IP binding</strong>: the Open PageRank free key is bound to one IP. A fly
   region egress IP is stable per app, so rebind once to the fly IP and the
   monthly batch enrichment finally works unattended (currently on hold).
@@ -297,6 +301,9 @@ fly ssh sftp put config/global.yaml /data/config/global.yaml --app &lt;app&gt;
 fly ssh console -C &quot;ls /data &amp;&amp; scripts/daily.sh run&quot;
 </code></pre>
 <p>注意：
+- <strong>单机入口</strong>：<code>scripts/start.sh</code> 后台起 supercronic、前台跑客户端
+  门户 HTTP 服务（<code>[http_service] internal_port = 8080</code>）。一台机器
+  挂一个卷——fly 卷是单挂载，cron 与门户必须共用同一 VM。
 - <strong>OPR IP 绑定</strong>：免费 key 绑单 IP。fly region 出口 IP 对同一 app 是
   稳定的，改绑一次到 fly IP 后，月度批量富化即可无人值守（当前暂挂）。
 - <strong>数据中心 IP 发 Gmail</strong>：首次发送可能触发 Google 可疑登录拦截；

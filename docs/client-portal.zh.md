@@ -153,13 +153,13 @@ run_log + link_verify 聚合——与 B4 profile 同一套聚合，以趋势图�
 
 ## 5. 构建顺序
 
-1. 门户骨架上 fly.io：会话认证（邮箱 + 验证信），两个 OAuth 按钮
-   先桩着（先做 Google——App Review 更简单；Facebook 等开发者应用
-   过审后接）。
-2. 按 §4 契约做视图 A/B v1（不改调度器写入）。
-3. 报告存档页（镜像 B2 邮件）。
-4. 自助建项目 + 归属验证 + 试用额度（§1.5）。
-5. 第 4 层下游流量——与被服务站点约定 UTM 规范后做。
+1. ~~门户骨架上 fly.io~~ **2026-11-18 已交付**（`src/osched/portal.py`、
+   `osched portal` CLI）：邮箱注册 + 验证信（复用 report SMTP 机制）、
+   scrypt 密码、HttpOnly 会话 cookie、只读视图 A/B v0 看板；Google/
+   Facebook 按钮先桩着（回调域名绑定后先接 Google）。
+2. 按 §4 契约做视图 A/B v1（DR 分桶、漏斗趋势、报告存档页）。
+3. 自助建项目 + 归属验证 + 试用额度（§1.5）。
+4. 第 4 层下游流量——与被服务站点约定 UTM 规范后做。
 
 待定项：OAuth 回调域名（fly 应用需绑真实域名）、Facebook 开发者
 应用过审、账期边界定义（自然月 vs 滚动 30 天）。

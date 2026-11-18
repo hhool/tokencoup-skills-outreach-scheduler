@@ -168,11 +168,15 @@ process and the cron process are separate, sqlite WAL mode allows both.
 
 ## 5. Build order
 
-1. portal skeleton on fly.io: session auth (email + verify mail), two
-   OAuth buttons stubbed (Google first — App Review simpler; Facebook
-   follows once the developer app is approved).
-2. View A/B v1 from the §4 contract (no new scheduler writes).
-3. Report archive page (mirrors B2 mails).
+1. ~~portal skeleton on fly.io~~ **shipped 2026-11-18** (`src/osched/portal.py`,
+   `osched portal` CLI): email registration + verification mail (reuses
+   the report SMTP machinery), scrypt passwords, HttpOnly session
+   cookies, read-only View A/B v0 dashboard; Google/Facebook buttons
+   stubbed (Google first when the callback domain is bound).
+2. View A/B v1 from the §4 contract (DR bands, funnel trend, report
+   archive page).
+3. Self-service project creation + ownership verification + trial
+   credits (§1.5).
 4. Tier 4 downstream traffic — after UTM convention agreed with served
    sites.
 

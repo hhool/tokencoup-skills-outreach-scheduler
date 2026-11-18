@@ -288,11 +288,15 @@ Deliveries stay in the scheduler path (cron + human gates); the portal
 process and the cron process are separate, sqlite WAL mode allows both.</p>
 <h2>5. Build order</h2>
 <ol>
-<li>portal skeleton on fly.io: session auth (email + verify mail), two
-   OAuth buttons stubbed (Google first — App Review simpler; Facebook
-   follows once the developer app is approved).</li>
-<li>View A/B v1 from the §4 contract (no new scheduler writes).</li>
-<li>Report archive page (mirrors B2 mails).</li>
+<li>~~portal skeleton on fly.io~~ <strong>shipped 2026-11-18</strong> (<code>src/osched/portal.py</code>,
+   <code>osched portal</code> CLI): email registration + verification mail (reuses
+   the report SMTP machinery), scrypt passwords, HttpOnly session
+   cookies, read-only View A/B v0 dashboard; Google/Facebook buttons
+   stubbed (Google first when the callback domain is bound).</li>
+<li>View A/B v1 from the §4 contract (DR bands, funnel trend, report
+   archive page).</li>
+<li>Self-service project creation + ownership verification + trial
+   credits (§1.5).</li>
 <li>Tier 4 downstream traffic — after UTM convention agreed with served
    sites.</li>
 </ol>
@@ -509,11 +513,11 @@ run_log + link_verify 聚合——与 B4 profile 同一套聚合，以趋势图�
 两者并存。</p>
 <h2>5. 构建顺序</h2>
 <ol>
-<li>门户骨架上 fly.io：会话认证（邮箱 + 验证信），两个 OAuth 按钮
-   先桩着（先做 Google——App Review 更简单；Facebook 等开发者应用
-   过审后接）。</li>
-<li>按 §4 契约做视图 A/B v1（不改调度器写入）。</li>
-<li>报告存档页（镜像 B2 邮件）。</li>
+<li>~~门户骨架上 fly.io~~ <strong>2026-11-18 已交付</strong>（<code>src/osched/portal.py</code>、
+   <code>osched portal</code> CLI）：邮箱注册 + 验证信（复用 report SMTP 机制）、
+   scrypt 密码、HttpOnly 会话 cookie、只读视图 A/B v0 看板；Google/
+   Facebook 按钮先桩着（回调域名绑定后先接 Google）。</li>
+<li>按 §4 契约做视图 A/B v1（DR 分桶、漏斗趋势、报告存档页）。</li>
 <li>自助建项目 + 归属验证 + 试用额度（§1.5）。</li>
 <li>第 4 层下游流量——与被服务站点约定 UTM 规范后做。</li>
 </ol>

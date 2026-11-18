@@ -62,6 +62,10 @@ fly ssh console -C "ls /data && scripts/daily.sh run"
 ```
 
 Notes:
+- **Single-VM entrypoint**: `scripts/start.sh` runs supercronic in the
+  background and the client-portal HTTP server in the foreground
+  (`[http_service] internal_port = 8080`). One machine, one volume —
+  fly volumes are single-attach, so cron and portal must share the VM.
 - **OPR IP binding**: the Open PageRank free key is bound to one IP. A fly
   region egress IP is stable per app, so rebind once to the fly IP and the
   monthly batch enrichment finally works unattended (currently on hold).

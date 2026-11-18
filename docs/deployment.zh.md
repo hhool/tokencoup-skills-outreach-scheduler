@@ -56,6 +56,9 @@ fly ssh console -C "ls /data && scripts/daily.sh run"
 ```
 
 注意：
+- **单机入口**：`scripts/start.sh` 后台起 supercronic、前台跑客户端
+  门户 HTTP 服务（`[http_service] internal_port = 8080`）。一台机器
+  挂一个卷——fly 卷是单挂载，cron 与门户必须共用同一 VM。
 - **OPR IP 绑定**：免费 key 绑单 IP。fly region 出口 IP 对同一 app 是
   稳定的，改绑一次到 fly IP 后，月度批量富化即可无人值守（当前暂挂）。
 - **数据中心 IP 发 Gmail**：首次发送可能触发 Google 可疑登录拦截；
