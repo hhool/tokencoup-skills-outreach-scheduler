@@ -19,7 +19,9 @@ Routes:
 """
 from __future__ import annotations
 
+import base64
 import hashlib
+import hmac
 import html
 import json
 import os
@@ -113,6 +115,15 @@ CREATE TABLE IF NOT EXISTS package_request (
   status         TEXT NOT NULL DEFAULT 'pending',
                  -- pending | done | cancelled
   created_at     TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE TABLE IF NOT EXISTS data_deletion (
+  id               INTEGER PRIMARY KEY AUTOINCREMENT,
+  provider         TEXT NOT NULL,        -- facebook
+  provider_user_id TEXT NOT NULL,
+  client_id        INTEGER,              -- matched client, NULL if none
+  confirmation_code TEXT NOT NULL,
+  created_at       TEXT NOT NULL DEFAULT (datetime('now'))
 );
 """
 
@@ -302,6 +313,18 @@ def _oauth_exchange_code(cfg: dict, provider: str, code: str,
     me = _http_json("https://graph.facebook.com/me"
                     "?fields=id,name,email&access_token=" + access)
     return {"sub": me.get("id") or "", "email": me.get("email")}
+
+
+def _fb_parse_signed_request(signed: str, app_secret: str) -> dict:
+    """Verify and decode a Facebook `signed_request` (HMAC-SHA256)."""
+    sig_b64, payload_b64 = signed.split(".", 1)
+    pad = lambda s: s + "=" * (-len(s) % 4)  # noqa: E731
+    expected = hmac.new(app_secret.encode(), payload_b64.encode(),
+                        hashlib.sha256).digest()
+    actual = base64.urlsafe_b64decode(pad(sig_b64))
+    if not hmac.compare_digest(expected, actual):
+        raise RuntimeError("signed_request signature mismatch")
+    return json.loads(base64.urlsafe_b64decode(pad(payload_b64)))
 
 
 def _oauth_upsert_client(conn, provider: str, sub: str, email: str):
@@ -893,8 +916,58 @@ class PortalHandler(BaseHTTPRequestHandler):
             self._post_verify_domain()
         elif path == "/admin":
             self._post_admin()
+        elif path == "/auth/facebook/data-deletion":
+            self._fb_data_deletion()
         else:
             self._html("<h1>Not found</h1>", title="404")
+
+    def _fb_data_deletion(self):
+        """Facebook 'Data deletion request callback' (Basic settings).
+
+        FB POSTs signed_request=<HMAC-signed payload with user_id>.
+        We anonymize the matching client row, log the request, and reply
+        with the JSON contract FB expects.
+        """
+        _, csec = _oauth_cfg(self.cfg, "facebook")
+        if not csec:
+            self._api_send({"error": "facebook app secret not configured"},
+                           status=503)
+            return
+        signed = self._form().get("signed_request") or ""
+        try:
+            data = _fb_parse_signed_request(signed, csec)
+        except Exception as e:  # noqa: BLE001 — reject unverifiable payloads
+            self._api_send({"error": f"invalid signed_request: {e}"},
+                           status=403)
+            return
+        uid = str(data.get("user_id") or "")
+        if not uid:
+            self._api_send({"error": "user_id missing"}, status=400)
+            return
+        code = secrets.token_urlsafe(16)
+        conn = self.conn
+        row = conn.execute(
+            "SELECT id FROM client WHERE oauth_provider='facebook' "
+            "AND oauth_sub=?", (uid,)).fetchone()
+        client_id = row["id"] if row else None
+        if client_id:
+            junk = f"deleted-{code[:8]}@invalid.local"
+            conn.execute(
+                """UPDATE client SET email=?, password_hash=?, verified=0,
+                   oauth_provider=NULL, oauth_sub=NULL, verify_token=NULL,
+                   verify_expires=NULL WHERE id=?""",
+                (junk, f"deleted:{secrets.token_urlsafe(24)}", client_id))
+            conn.execute("DELETE FROM client_session WHERE client_id=?",
+                         (client_id,))
+        conn.execute(
+            """INSERT INTO data_deletion(provider, provider_user_id,
+               client_id, confirmation_code) VALUES('facebook',?,?,?)""",
+            (uid, client_id, code))
+        conn.commit()
+        self._api_send({
+            "url": "https://***REMOVED-REVOKED-DOMAIN***/privacy.html",
+            "confirmation_code": code,
+        })
 
     def _post_register(self):
         f = self._form()
