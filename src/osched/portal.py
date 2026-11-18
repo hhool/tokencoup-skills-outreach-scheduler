@@ -36,6 +36,9 @@ from http.server import BaseHTTPRequestHandler, HTTPServer
 from urllib.parse import parse_qs, urlencode, urlparse
 
 from .db import connect as db_connect
+from .guard import (DENY_TEXT, TRIAL_CREDITS, canonical_email, client_ip,
+                    draft_quota_message, record_trial, registrable_domain,
+                    signup_blocked, trial_verdict)
 from .report import send_mail
 
 SESSION_DAYS = 14
@@ -60,6 +63,8 @@ CREATE TABLE IF NOT EXISTS client (
   oauth_sub     TEXT,
   verify_token  TEXT,
   verify_expires TEXT,
+  signup_ip     TEXT,                   -- abuse ledger: registration source
+  last_ip       TEXT,
   created_at    TEXT NOT NULL DEFAULT (datetime('now'))
 );
 CREATE TABLE IF NOT EXISTS client_session (
@@ -85,6 +90,8 @@ CREATE TABLE IF NOT EXISTS project_request (
   quota_total   INTEGER NOT NULL DEFAULT 3,
   quota_used    INTEGER NOT NULL DEFAULT 0,
   trial_until   TEXT,                   -- trial window expiry (activated +14d)
+  trial_note    TEXT,                   -- granted | deny reason (guard.py)
+  trial_checked_at TEXT,
   created_at    TEXT NOT NULL DEFAULT (datetime('now')),
   UNIQUE(client_id, domain)
 );
@@ -125,6 +132,22 @@ CREATE TABLE IF NOT EXISTS data_deletion (
   confirmation_code TEXT NOT NULL,
   created_at       TEXT NOT NULL DEFAULT (datetime('now'))
 );
+
+-- Free-trial abuse ledger: one row per granted trial. The three signal
+-- columns are why a second grant is refused (see guard.py).
+CREATE TABLE IF NOT EXISTS trial_ledger (
+  id          INTEGER PRIMARY KEY AUTOINCREMENT,
+  client_id   INTEGER NOT NULL,
+  request_id  INTEGER,
+  project_id  INTEGER,
+  email_canon TEXT,                     -- alias-collapsed mailbox
+  reg_domain  TEXT,                     -- eTLD+1 of the verified site
+  ip          TEXT,                     -- client IP at activation
+  granted_at  TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_trial_ledger_email ON trial_ledger(email_canon);
+CREATE INDEX IF NOT EXISTS idx_trial_ledger_site  ON trial_ledger(reg_domain);
+CREATE INDEX IF NOT EXISTS idx_trial_ledger_ip    ON trial_ledger(ip);
 """
 
 def _migrate_portal(conn: sqlite3.Connection) -> None:
@@ -134,11 +157,22 @@ def _migrate_portal(conn: sqlite3.Connection) -> None:
     if "role" not in cols:
         conn.execute("ALTER TABLE client ADD COLUMN role TEXT "
                      "NOT NULL DEFAULT 'client'")
+    if "signup_ip" not in cols:
+        conn.execute("ALTER TABLE client ADD COLUMN signup_ip TEXT")
+    if "last_ip" not in cols:
+        conn.execute("ALTER TABLE client ADD COLUMN last_ip TEXT")
     req_cols = {r["name"] for r in conn.execute(
         "PRAGMA table_info(project_request)").fetchall()}
     if "trial_until" not in req_cols:
         conn.execute("ALTER TABLE project_request ADD COLUMN "
                      "trial_until TEXT")
+    if "trial_note" not in req_cols:
+        # why the free credits were withheld ("granted" | deny reason)
+        conn.execute("ALTER TABLE project_request ADD COLUMN "
+                     "trial_note TEXT")
+    if "trial_checked_at" not in req_cols:
+        conn.execute("ALTER TABLE project_request ADD COLUMN "
+                     "trial_checked_at TEXT")
 
 
 def seed_admin_whitelist(conn: sqlite3.Connection, cfg: dict) -> None:
@@ -327,7 +361,8 @@ def _fb_parse_signed_request(signed: str, app_secret: str) -> dict:
     return json.loads(base64.urlsafe_b64decode(pad(payload_b64)))
 
 
-def _oauth_upsert_client(conn, provider: str, sub: str, email: str):
+def _oauth_upsert_client(conn, provider: str, sub: str, email: str,
+                         ip: str = ""):
     """Find or create the client for an OAuth identity.
 
     OAuth emails count as verified (providers verify mailbox ownership).
@@ -342,18 +377,18 @@ def _oauth_upsert_client(conn, provider: str, sub: str, email: str):
                        (email,)).fetchone()
     if row:
         conn.execute("UPDATE client SET verified=1, oauth_provider=?, "
-                     "oauth_sub=? WHERE id=?",
-                     (provider, sub, row["id"]))
+                     "oauth_sub=?, last_ip=COALESCE(?, last_ip) WHERE id=?",
+                     (provider, sub, ip or None, row["id"]))
         conn.commit()
         return row["id"]
     conn.execute(
         """INSERT INTO client(email, password_hash, verified,
-           oauth_provider, oauth_sub, role)
+           oauth_provider, oauth_sub, role, signup_ip, last_ip)
            VALUES(?, ?, 1, ?, ?,
              CASE WHEN ? IN (SELECT email FROM admin_whitelist)
-               THEN 'admin' ELSE 'client' END)""",
+               THEN 'admin' ELSE 'client' END, ?, ?)""",
         (email, f"oauth!{provider}:{secrets.token_urlsafe(24)}",
-         provider, sub, email))
+         provider, sub, email, ip or None, ip or None))
     conn.commit()
     return conn.execute("SELECT id FROM client WHERE email=?",
                         (email,)).fetchone()["id"]
@@ -425,25 +460,51 @@ def _verify_url(domain: str) -> str:
 
 
 def _trial_used(conn, client_id: int) -> bool:
+    """True once this account can no longer earn free credits.
+
+    Two sources: the abuse ledger (authoritative) and legacy trial rows
+    created before the ledger existed.
+    """
+    if conn.execute("SELECT 1 FROM trial_ledger WHERE client_id=? LIMIT 1",
+                    (client_id,)).fetchone() is not None:
+        return True
     return conn.execute(
         """SELECT 1 FROM project_request WHERE client_id=?
-           AND quota_type='trial'
+           AND quota_type='trial' AND quota_total>0
            AND verify_state IN ('verified','active') LIMIT 1""",
         (client_id,)).fetchone() is not None
 
 
 def _domain_claimed(conn, domain: str, exclude_client: int) -> bool:
-    return conn.execute(
-        """SELECT 1 FROM project_request WHERE domain=?
-           AND verify_state IN ('verified','active')
-           AND client_id != ? LIMIT 1""",
-        (domain, exclude_client)).fetchone() is not None
+    """Exact-host OR same-site claim by another account.
+
+    eTLD+1 comparison blocks the ``shop.a.com`` / ``a.com`` re-claim trick.
+    """
+    site = registrable_domain(domain)
+    for row in conn.execute(
+            """SELECT domain FROM project_request
+               WHERE verify_state IN ('verified','active')
+                 AND client_id != ?""", (exclude_client,)).fetchall():
+        other = row["domain"]
+        if other == domain or registrable_domain(other) == site:
+            return True
+    return False
 
 
-def activate_request(conn, req) -> dict:
-    """Ownership verified -> link/create the scheduler project, grant trial."""
-    trial = not _trial_used(conn, req["client_id"])
-    credits = (3 if trial else 0)
+def activate_request(conn, req, ip: str = "") -> dict:
+    """Ownership verified -> link/create the scheduler project, grant trial.
+
+    Credentials are guarded (``guard.trial_verdict``): the project always
+    activates, but the 3 free links are withheld when the mailbox, the
+    site, or the network already earned a trial. Withholding is recorded
+    so an admin can override after review.
+    """
+    client = conn.execute("SELECT id, email FROM client WHERE id=?",
+                          (req["client_id"],)).fetchone()
+    email = client["email"] if client else ""
+    granted, reason = trial_verdict(conn, req["client_id"], email,
+                                    req["domain"], ip)
+    credits = TRIAL_CREDITS if granted else 0
     pr = conn.execute("SELECT id FROM project WHERE domain=?",
                       (req["domain"],)).fetchone()
     if pr:
@@ -468,13 +529,19 @@ def activate_request(conn, req) -> dict:
     conn.execute(
         """UPDATE project_request SET verify_state='active', project_id=?,
            quota_type=?, quota_total=?, quota_used=0,
-           trial_until=(CASE WHEN ?='trial'
+           trial_note=?, trial_checked_at=datetime('now'),
+           trial_until=(CASE WHEN ?='granted'
              THEN datetime('now','+14 days') ELSE trial_until END)
            WHERE id=?""",
-        (project_id, "trial" if trial else "paid",
-         credits if trial else 0, "trial" if trial else "paid", req["id"]))
+        (project_id, "trial" if granted else "paid", credits, reason,
+         reason, req["id"]))
     conn.commit()
-    return {"project_id": project_id, "trial": trial, "credits": credits}
+    if granted:
+        record_trial(conn, client_id=req["client_id"], request_id=req["id"],
+                     project_id=project_id, email=email,
+                     domain=req["domain"], ip=ip)
+    return {"project_id": project_id, "trial": granted, "credits": credits,
+            "reason": reason, "deny_text": DENY_TEXT.get(reason, "")}
 
 
 # --------------------------------------------------------------------------
@@ -485,7 +552,7 @@ def _client_projects(conn, client_id: int):
     return conn.execute(
         """
         SELECT pr.id AS project_id, pr.domain, req.quota_type, req.quota_total,
-          req.quota_used, req.trial_until,
+          req.quota_used, req.trial_until, req.trial_note,
           (SELECT COUNT(*) FROM match m WHERE m.project_id=pr.id
              AND m.state='pending') AS pending,
           (SELECT COUNT(*) FROM plan pl WHERE pl.project_id=pr.id
@@ -638,16 +705,20 @@ def render_dashboard(conn, client) -> str:
             f"<td>{r['live']} / {r['quota_total']}</td>"
             f"<td>{r['live_month']}</td>"
             f"<td>{r['inflight']}</td><td>{r['pending']}</td>"
-            f"<td>{r['live30']}</td></tr>"
+            f"<td>{r['live30']}</td>"
+            f"<td class='muted'>{_esc(DENY_TEXT.get(r['trial_note'] or '', '')[:60])}</td>"
+            f"</tr>"
             for r in rows)
         quota_card = (
             "<div class='card'><h2>Quota consumption</h2>"
             "<table><tr><th>project</th><th>type</th><th>live / quota</th>"
             "<th>live (this month)</th><th>in flight</th><th>pending</th>"
-            "<th>live (30d)</th></tr>"
+            "<th>live (30d)</th><th>trial</th></tr>"
             + quota_rows + "</table>"
             "<p class='muted'>Only confirmed live links consume credits; "
-            "in-flight and never-live items are not billed.</p></div>")
+            "in-flight and never-live items are not billed. The trial "
+            "column explains a withheld free allocation; paid credits have "
+            "no per-account limit.</p></div>")
 
         cap = _capacity_rows(conn, client["id"],
                              datetime.utcnow().date().isoformat())
@@ -791,6 +862,18 @@ class PortalHandler(BaseHTTPRequestHandler):
         return (os.environ.get("PORTAL_BASE_URL")
                 or self.cfg.get("portal", {}).get("base_url")
                 or "http://127.0.0.1:8090").rstrip("/")
+
+    def _ip(self) -> str:
+        """Client IP for trial/abuse ledgering (proxy-header aware)."""
+        return client_ip(self)
+
+    def _signup_block(self, email: str, ip: str) -> str:
+        """Empty string = allowed. Whitelisted admins are never rate-limited."""
+        wl = self.conn.execute(
+            "SELECT 1 FROM admin_whitelist WHERE email=?", (email,)).fetchone()
+        if wl:
+            return ""
+        return signup_blocked(self.conn, ip)
 
     # -- routes ------------------------------------------------------------
 
@@ -983,15 +1066,20 @@ class PortalHandler(BaseHTTPRequestHandler):
             self._page_home(notice="This email is already registered — log in.",
                             email=email)
             return
+        ip = self._ip()
+        blocked = self._signup_block(email, ip)
+        if blocked:
+            self._page_home(notice=blocked, email=email)
+            return
         token = secrets.token_urlsafe(32)
         exp = (datetime.utcnow() + timedelta(hours=VERIFY_HOURS)).isoformat()
         self.conn.execute(
             """INSERT INTO client(email, password_hash, verified,
-               verify_token, verify_expires, role)
+               verify_token, verify_expires, role, signup_ip, last_ip)
                VALUES(?,?,0,?,?,
                  CASE WHEN ? IN (SELECT email FROM admin_whitelist)
-                   THEN 'admin' ELSE 'client' END)""",
-            (email, hash_password(password), token, exp, email))
+                   THEN 'admin' ELSE 'client' END, ?, ?)""",
+            (email, hash_password(password), token, exp, email, ip, ip))
         self.conn.commit()
         link = f"{self._base_url()}/verify?token={token}"
         dev = os.environ.get("PORTAL_DEV") == "1" or \
@@ -1026,6 +1114,9 @@ class PortalHandler(BaseHTTPRequestHandler):
             self._page_home(notice="Account not verified — check your inbox "
                                    "for the verification mail.", email=email)
             return
+        self.conn.execute("UPDATE client SET last_ip=? WHERE id=?",
+                          (self._ip(), row["id"]))
+        self.conn.commit()
         tok = _new_session(self.conn, row["id"])
         self._redirect("/dashboard", cookie=tok)
 
@@ -1109,8 +1200,9 @@ class PortalHandler(BaseHTTPRequestHandler):
             self._redirect("/")
             return
         ok, msg = verify_and_activate(self.conn, client["id"],
-                                      self._form().get("id") or "")
-        self._page_new(notice=None if ok else msg)
+                                      self._form().get("id") or "",
+                                      ip=self._ip())
+        self._page_new(notice=msg)
 
     def do_OPTIONS(self):  # CORS preflight for the Cloudflare Pages origin
         self.send_response(204)
@@ -1243,7 +1335,8 @@ class PortalHandler(BaseHTTPRequestHandler):
         raw = self.rfile.read(length).decode("utf-8", "replace")
         body = json.loads(raw or "{}")
         ok, msg = verify_and_activate(self.conn, client["id"],
-                                      str(body.get("id") or ""))
+                                      str(body.get("id") or ""),
+                                      ip=self._ip())
         self._api_send({"ok": ok, "message": msg}, 200 if ok else 400)
 
     def _api_register(self):
@@ -1260,15 +1353,20 @@ class PortalHandler(BaseHTTPRequestHandler):
                              (email,)).fetchone():
             self._api_send({"ok": False, "error": "already registered"}, 400)
             return
+        ip = self._ip()
+        blocked = self._signup_block(email, ip)
+        if blocked:
+            self._api_send({"ok": False, "error": blocked}, 429)
+            return
         token = secrets.token_urlsafe(32)
         exp = (datetime.utcnow() + timedelta(hours=VERIFY_HOURS)).isoformat()
         self.conn.execute(
             """INSERT INTO client(email, password_hash, verified,
-               verify_token, verify_expires, role)
+               verify_token, verify_expires, role, signup_ip, last_ip)
                VALUES(?,?,0,?,?,
                  CASE WHEN ? IN (SELECT email FROM admin_whitelist)
-                   THEN 'admin' ELSE 'client' END)""",
-            (email, hash_password(password), token, exp, email))
+                   THEN 'admin' ELSE 'client' END, ?, ?)""",
+            (email, hash_password(password), token, exp, email, ip, ip))
         self.conn.commit()
         link = f"{self._base_url()}/verify?token={token}"
         dev = os.environ.get("PORTAL_DEV") == "1" or \
@@ -1300,6 +1398,9 @@ class PortalHandler(BaseHTTPRequestHandler):
         if not row["verified"]:
             self._api_send({"ok": False, "error": "not verified"}, 403)
             return
+        self.conn.execute("UPDATE client SET last_ip=? WHERE id=?",
+                          (self._ip(), row["id"]))
+        self.conn.commit()
         token = _new_session(self.conn, row["id"])
         self._api_send({"ok": True, "token": token,
                         "role": row["role"], "email": email})
@@ -1473,7 +1574,8 @@ class PortalHandler(BaseHTTPRequestHandler):
                 self.cfg, provider, code,
                 _oauth_redirect_uri(self.cfg, provider))
             client_id = _oauth_upsert_client(
-                self.conn, provider, ident["sub"], ident["email"])
+                self.conn, provider, ident["sub"], ident["email"],
+                ip=self._ip())
         except Exception as e:  # noqa: BLE001 — render as user-facing page
             self._oauth_error(str(e)[:200])
             return
@@ -1526,6 +1628,7 @@ class PortalHandler(BaseHTTPRequestHandler):
                 f"<tr><td>{_esc(r['domain'])}</td><td>{_esc(r['email'])}</td>"
                 f"<td>{_esc(r['quota_type'])}</td>"
                 f"<td>{r['quota_used']} / {r['quota_total']}</td>"
+                f"<td class='muted'>{_esc(r['trial_note'] or '-')}</td>"
                 f"<td><form method='post' action='/admin' "
                 f"style='display:flex;gap:4px'>"
                 f"<input type='hidden' name='action' value='quota'>"
@@ -1535,7 +1638,7 @@ class PortalHandler(BaseHTTPRequestHandler):
                 f"<button style='padding:2px 8px'>Set</button></form>"
                 f"</td></tr>")
         if not active_rows:
-            active_rows = ("<tr><td colspan='5' class='muted'>no active "
+            active_rows = ("<tr><td colspan='6' class='muted'>no active "
                            "projects</td></tr>")
         clients = self.conn.execute(
             """SELECT c.*, (SELECT COUNT(*) FROM project_request r
@@ -1548,7 +1651,8 @@ class PortalHandler(BaseHTTPRequestHandler):
             in_wl = c["email"] in wl
             client_rows += (
                 f"<tr><td>{_esc(c['email'])}</td><td>{_esc(c['role'])}</td>"
-                f"<td>{c['npr']}</td><td>"
+                f"<td>{c['npr']}</td>"
+                f"<td class='muted'>{_esc(c['signup_ip'] or '-')}</td><td>"
                 f"<form method='post' action='/admin'>"
                 f"<input type='hidden' name='action' value='whitelist'>"
                 f"<input type='hidden' name='email' value='{_esc(c['email'])}'>"
@@ -1579,10 +1683,15 @@ class PortalHandler(BaseHTTPRequestHandler):
         match/confirm stay scheduler-owned.</p></div>
         <div class='card'><h2>Active projects &amp; quotas</h2>
         <table><tr><th>project</th><th>client</th><th>type</th>
-        <th>used / total</th><th>set total</th></tr>
-        {active_rows}</table></div>
+        <th>used / total</th><th>trial</th><th>set total</th></tr>
+        {active_rows}</table>
+        <p class='muted'>trial column = why the free credits were granted or
+        withheld (guard.py signals: mailbox, site, network). Withheld
+        projects start at 0 and are invisible to the scheduler until you
+        set a total below.</p></div>
         <div class='card'><h2>Clients</h2>
-        <table><tr><th>email</th><th>role</th><th>projects</th><th></th></tr>
+        <table><tr><th>email</th><th>role</th><th>projects</th>
+        <th>signup ip</th><th></th></tr>
         {client_rows}</table></div>"""
         self._html(body, title="admin", nav=self._nav_links())
 
@@ -1609,6 +1718,9 @@ def create_request(conn, client, form: dict) -> tuple[bool, str]:
         return False, err
     if _domain_claimed(conn, domain, client["id"]):
         return False, "This domain is already claimed by another account."
+    blocked = draft_quota_message(conn, client["id"])
+    if blocked:
+        return False, blocked
     dup = conn.execute(
         "SELECT 1 FROM project_request WHERE client_id=? AND domain=?",
         (client["id"], domain)).fetchone()
@@ -1630,7 +1742,8 @@ def create_request(conn, client, form: dict) -> tuple[bool, str]:
     return True, domain
 
 
-def verify_and_activate(conn, client_id: int, rid: str) -> tuple[bool, str]:
+def verify_and_activate(conn, client_id: int, rid: str,
+                        ip: str = "") -> tuple[bool, str]:
     """Ownership check + activation core (shared by HTML and JSON)."""
     req = conn.execute(
         """SELECT * FROM project_request WHERE id=? AND client_id=?
@@ -1647,11 +1760,12 @@ def verify_and_activate(conn, client_id: int, rid: str) -> tuple[bool, str]:
     if found != req["verify_token"]:
         return False, ("Verification tag not found on your homepage — "
                        "add it to <head> and retry.")
-    result = activate_request(conn, req)
+    result = activate_request(conn, req, ip=ip)
     if result["trial"]:
         return True, (f"{req['domain']} verified — project active with "
                       f"{result['credits']} trial live links.")
-    return True, f"{req['domain']} verified — project active."
+    return True, (f"{req['domain']} verified — project active. Free trial "
+                  f"not granted: {result['deny_text']}")
 
 
 def admin_action(conn, client, action: str, **kw) -> tuple[bool, str]:
@@ -1667,9 +1781,14 @@ def admin_action(conn, client, action: str, **kw) -> tuple[bool, str]:
             (kw.get("id") or "",)).fetchone()
         if not req:
             return False, "Request not found."
-        result = activate_request(conn, req)
-        return True, (f"{req['domain']} approved "
-                      f"({result['credits']} trial credits).")
+        # Manual approval still runs the email/site guards, but skips the
+        # network rule (the IP here is the admin's, not the client's).
+        result = activate_request(conn, req, ip="")
+        if result["trial"]:
+            return True, (f"{req['domain']} approved "
+                          f"({result['credits']} trial credits).")
+        return True, (f"{req['domain']} approved without credits — "
+                      f"{result['deny_text']} Set a quota below to grant.")
     if action == "quota":
         try:
             total = max(0, int(kw.get("quota_total") or 0))

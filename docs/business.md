@@ -188,7 +188,7 @@ Tiers (recommended defaults, numbers adjustable):
 
 | tier | monthly volume | price per live link | notes |
 |------|----------------|--------------------:|-------|
-| Trial | 3 links | free | portal self-serve, 14-day window, 1 per verified domain |
+| Trial | 3 links | free | portal self-serve, 14-day window, once per mailbox + site + network (see §Trial guards) |
 | Starter | 1–9 links | $80 | below the $100–500 anchor floor |
 | Growth | 10–49 links | $65 | main commercial tier |
 | Scale | 50+ links | $50 | volume floor; covers pool-marginal quality |
@@ -196,6 +196,41 @@ Tiers (recommended defaults, numbers adjustable):
 Service guarantee: a link that never reaches `live` after auto-retry +
 human fallback is **not billed**. Non-live states (`missing`,
 `unreachable`, `bot-blocked`) are work-in-progress, never billed.
+
+### Trial guards (ratified 2026-11-18)
+
+The free trial is 3 live links, and it is the only thing on the price
+sheet that can be taken without paying. Three signals are therefore
+required to be *fresh* before a project receives it, and each grant is
+written to `trial_ledger`:
+
+| signal | normalisation | rule |
+|--------|---------------|------|
+| mailbox | lowercase, `+tag` stripped, gmail dots stripped, googlemail≡gmail | one trial per mailbox, ever |
+| site | registrable domain (eTLD+1), `www.` dropped, IDNA | one trial per site; sub-domains collapse into the parent |
+| network | client IP (`Fly-Client-IP` / `CF-Connecting-IP`) | one trial per IP across all accounts |
+
+Refusal is never a dead end: the project still activates — it just starts
+at 0 credits, `project_request.trial_note` records the reason, and the
+admin console shows it. Manual approval keeps the mailbox/site checks and
+skips only the network rule (the operator's IP is not the client's);
+an operator can then set quota by hand after review.
+
+Account-creation is throttled too: 5 registrations per IP per 24h
+(admin-whitelisted addresses exempt), and one account may hold at most
+5 unverified draft projects.
+
+**Enforcement, not just bookkeeping.** `quota_total` is a hard ceiling:
+the scheduler refuses to schedule more plans than remaining credits
+(`generate_plan`) and the executor refuses to run more than the credits
+left (`due_today`). A delivered link consumes exactly one credit
+(`quota_used` mirrors `plan.state='live'`). Projects with no portal
+request — our own sites, imports — are uncapped, and so is any request
+marked `quota_type='internal'`.
+
+Consequence for the business model: "3 free links" cannot be farmed by
+opening new accounts, aliasing the mailbox, or splitting a site into
+sub-domains, and no amount of couponing turns into unbounded free work.
 
 ### Brand (ratified 2026-11-18)
 

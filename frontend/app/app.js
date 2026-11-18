@@ -75,6 +75,15 @@ const DICT = {
     "dash.exhausted": "Trial consumed — keep the momentum",
     "dash.exhaustedBody": "Your trial on",
     "dash.exhaustedBody2": "is used up. Choose a package to keep building — you only ever pay for links confirmed live, and the trial ledger stays as evidence.",
+    "dash.withheld": "Free trial not granted",
+    "dash.withheldBody": "We grant the 3-link trial once per mailbox, once per site, and once per network. These projects are active but start at 0 credits:",
+    "dash.withheldTag": "withheld",
+    "dash.withheldCta": "Paid links have no such limit — pick a package and we start the next working day.",
+    "trial.deny.email": "this e-mail (aliases included) already used the trial",
+    "trial.deny.site": "this site (sub-domains included) already used the trial",
+    "trial.deny.claimed": "this site is active under another account",
+    "trial.deny.ip": "this network already used the trial",
+    "trial.deny.used": "this account already used the trial",
     "dash.choosePackage": "Choose a package →",
     "dash.noActive": "No active project yet.",
     "dash.createProject": "Create your promotion project",
@@ -212,6 +221,15 @@ const DICT = {
     "dash.exhausted": "试用额度已用完——趁热继续",
     "dash.exhaustedBody": "你在",
     "dash.exhaustedBody2": "的试用额度已用尽。选一个套餐继续推进——只为确认上线的链接付费，试用期台账仍作为证据保留。",
+    "dash.withheld": "免费额度未发放",
+    "dash.withheldBody": "3 条免费额度按「邮箱／站点／网络」各限一次。以下项目已激活但额度为 0：",
+    "dash.withheldTag": "未发放",
+    "dash.withheldCta": "付费链接没有这个限制——选一个套餐，次个工作日开工。",
+    "trial.deny.email": "该邮箱（含别名）已用过试用额度",
+    "trial.deny.site": "该站点（含子域）已用过试用额度",
+    "trial.deny.claimed": "该站点已被其他账号激活",
+    "trial.deny.ip": "该网络已用过试用额度",
+    "trial.deny.used": "该账号已用过试用额度",
     "dash.choosePackage": "选择套餐 →",
     "dash.noActive": "还没有生效中的项目。",
     "dash.createProject": "创建推广项目",
@@ -549,6 +567,19 @@ async function pageDashboard() {
       ${esc(t("dash.exhaustedBody2"))}</p>
       <p><a class="btn" href="#/pricing">${esc(t("dash.choosePackage"))}</a></p>`);
   }
+  // free-trial withheld — the guards denied credits (see guard.py); the
+  // project still runs, it just starts at 0 and needs a package.
+  const denyKey = {client_used: "trial.deny.used", email_reused: "trial.deny.email",
+                   site_reused: "trial.deny.site", site_claimed: "trial.deny.claimed",
+                   ip_reused: "trial.deny.ip"};
+  const withheld = (d.projects || []).filter(p => p.quota_total === 0 && denyKey[p.trial_note]);
+  if (withheld.length) {
+    html += card(`<h2>${esc(t("dash.withheld"))}</h2>
+      <p>${esc(t("dash.withheldBody"))}</p>
+      <ul class="muted">${withheld.map(p => `<li><b>${esc(p.domain)}</b> — ${esc(t(denyKey[p.trial_note]))}</li>`).join("")}</ul>
+      <p>${esc(t("dash.withheldCta"))}</p>
+      <p><a class="btn" href="#/pricing">${esc(t("dash.choosePackage"))}</a></p>`);
+  }
   if (!d.projects.length) {
     html += card(`<p class="muted">${esc(t("dash.noActive"))}
       <a href="#/new">${esc(t("dash.createProject"))}</a>${esc(t("dash.createProject2"))}</p>`);
@@ -563,6 +594,8 @@ async function pageDashboard() {
       const days = Math.ceil((new Date(p.trial_until.replace(" ", "T") + "Z") - Date.now()) / 86400000);
       trial = days > 0 ? `<span class="ok">${days}${esc(t("dash.daysLeft"))}</span>`
                        : `<span class="bad">${esc(t("dash.windowClosed"))}</span>`;
+    } else if (p.quota_total === 0 && denyKey[p.trial_note]) {
+      trial = `<span class="bad">${esc(t("dash.withheldTag"))}</span>`;
     }
     return `<tr><td>${esc(p.domain)}</td><td>${esc(p.quota_type)}</td>
       <td><div class="qbar ${pct >= 100 ? "full" : ""}"><i style="width:${pct}%"></i></div>

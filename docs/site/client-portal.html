@@ -176,6 +176,53 @@ trial credits — this is the acquisition funnel for the 2B service.</p>
 </tr>
 </tbody>
 </table>
+<h3>Anti-abuse guards (delivered 2026-11-18)</h3>
+<p>Implemented in <code>src/osched/guard.py</code>; every grant lands in <code>trial_ledger</code>
+(<code>email_canon</code>, <code>reg_domain</code>, <code>ip</code>) so the same signal cannot mint a
+second trial.</p>
+<table>
+<thead>
+<tr>
+<th>vector</th>
+<th>guard</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>throwaway mailboxes / aliases</td>
+<td><code>canonical_email()</code> — <code>+tag</code> stripped, gmail dots stripped, googlemail≡gmail; one trial per canonical mailbox</td>
+</tr>
+<tr>
+<td>site split into sub-domains</td>
+<td><code>registrable_domain()</code> (eTLD+1) — <code>shop.a.com</code> collides with <code>a.com</code> for both the ledger and the "already claimed" check</td>
+</tr>
+<tr>
+<td>second account on the same laptop / office</td>
+<td><code>client_ip()</code> reads <code>Fly-Client-IP</code>/<code>CF-Connecting-IP</code>; one trial per IP, and 5 signups per IP per 24h</td>
+</tr>
+<tr>
+<td>draft hoarding</td>
+<td>max 5 unverified <code>project_request</code> rows per account</td>
+</tr>
+</tbody>
+</table>
+<p>Refusal is graceful: the project activates with <code>quota_total=0</code>,
+<code>quota_type=paid</code>, and <code>trial_note</code> carrying the reason
+(<code>email_reused</code> / <code>site_reused</code> / <code>site_claimed</code> / <code>ip_reused</code> /
+<code>client_used</code>). The SPA dashboard prints the reason with a package CTA;
+the admin console shows it per project and can set quota manually.
+Manual "approve" runs the mailbox/site checks and skips only the network
+rule, since the approval IP belongs to the operator.</p>
+<p><strong>Credits are enforced, not just displayed:</strong> <code>guard.credit_cap</code> /
+<code>allowance</code> bound both <code>scheduler.generate_plan</code> (won't schedule beyond
+remaining credits) and <code>scheduler.due_today</code> (won't execute beyond them);
+<code>verify.check_one</code> mirrors each <code>live</code> transition into
+<code>project_request.quota_used</code>. Projects without a portal request stay
+uncapped (our own sites, imports), and so does any request marked
+<code>quota_type='internal'</code> — the escape hatch for operator-owned sites that
+should never be throttled by a customer-facing credit count.</p>
+<p>Tests: <code>PYTHONPATH=src python3 -m pytest tests/test_guard.py -q</code>
+(24 cases: normalisation, verdict matrix, schedule/execute ceilings).</p>
 <h2>2. View A — quota consumption (额度消耗)</h2>
 <p>Two layers: <strong>package credits</strong> (commercial) and <strong>delivery capacity</strong>
 (operational transparency).</p>
@@ -552,6 +599,48 @@ Google / Facebook OAuth），然后只看两样东西：<strong>额度消耗</st
 </tr>
 </tbody>
 </table>
+<h3>试用防刷（2026-11-18 已交付）</h3>
+<p>实现于 <code>src/osched/guard.py</code>；每次发放都落 <code>trial_ledger</code>
+（<code>email_canon</code>、<code>reg_domain</code>、<code>ip</code>），同一信号无法刷出第二次。</p>
+<table>
+<thead>
+<tr>
+<th>薅法</th>
+<th>防线</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>一次性邮箱 / 别名</td>
+<td><code>canonical_email()</code>——去 <code>+tag</code>、gmail 去点、googlemail≡gmail；归一后一个邮箱一次</td>
+</tr>
+<tr>
+<td>把站点拆成子域</td>
+<td><code>registrable_domain()</code>（eTLD+1）——<code>shop.a.com</code> 与 <code>a.com</code> 在台账和「已被占用」判断里都算同一个</td>
+</tr>
+<tr>
+<td>同一台电脑/办公室开新号</td>
+<td><code>client_ip()</code> 读 <code>Fly-Client-IP</code>/<code>CF-Connecting-IP</code>；一个 IP 一次试用，且单 IP 24h 最多 5 次注册</td>
+</tr>
+<tr>
+<td>囤草稿</td>
+<td>单账号最多 5 个未验证 <code>project_request</code></td>
+</tr>
+</tbody>
+</table>
+<p>拒发不炸流程：项目照常激活，<code>quota_total=0</code>、<code>quota_type=paid</code>，
+<code>trial_note</code> 记录原因（<code>email_reused</code>/<code>site_reused</code>/<code>site_claimed</code>/
+<code>ip_reused</code>/<code>client_used</code>）。SPA 看板显示原因并引导选套餐；超管后台
+按项目展示原因、可手动设额度。人工「approve」保留邮箱／站点校验，
+只跳过网络规则（审批 IP 是运营者的）。</p>
+<p><strong>额度是真封顶，不只是显示：</strong> <code>guard.credit_cap</code>/<code>allowance</code> 同时约束
+<code>scheduler.generate_plan</code>（不排超剩余额度）与 <code>scheduler.due_today</code>
+（不跑超剩余额度）；<code>verify.check_one</code> 每次转 <code>live</code> 会把
+<code>project_request.quota_used</code> 对齐。没有门户请求的项目（自有站、导入）
+不受限；<code>quota_type='internal'</code> 同样不受限——自有站不会被面向客户的
+额度数卡住，这是运营侧的逃生门。</p>
+<p>测试：<code>PYTHONPATH=src python3 -m pytest tests/test_guard.py -q</code>
+（24 例：归一化、裁决矩阵、排期/执行封顶）。</p>
 <h2>2. 视图 A — 额度消耗</h2>
 <p>两层：<strong>套餐额度</strong>（商业层）与<strong>投递产能</strong>（运营透明层）。</p>
 <h3>2.1 套餐额度（商业层）</h3>

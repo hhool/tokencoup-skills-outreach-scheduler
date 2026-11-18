@@ -329,7 +329,7 @@ billed).</p>
 <td>Trial</td>
 <td>3 links</td>
 <td style="text-align: right;">free</td>
-<td>portal self-serve, 14-day window, 1 per verified domain</td>
+<td>portal self-serve, 14-day window, once per mailbox + site + network (see §Trial guards)</td>
 </tr>
 <tr>
 <td>Starter</td>
@@ -354,6 +354,55 @@ billed).</p>
 <p>Service guarantee: a link that never reaches <code>live</code> after auto-retry +
 human fallback is <strong>not billed</strong>. Non-live states (<code>missing</code>,
 <code>unreachable</code>, <code>bot-blocked</code>) are work-in-progress, never billed.</p>
+<h3>Trial guards (ratified 2026-11-18)</h3>
+<p>The free trial is 3 live links, and it is the only thing on the price
+sheet that can be taken without paying. Three signals are therefore
+required to be <em>fresh</em> before a project receives it, and each grant is
+written to <code>trial_ledger</code>:</p>
+<table>
+<thead>
+<tr>
+<th>signal</th>
+<th>normalisation</th>
+<th>rule</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>mailbox</td>
+<td>lowercase, <code>+tag</code> stripped, gmail dots stripped, googlemail≡gmail</td>
+<td>one trial per mailbox, ever</td>
+</tr>
+<tr>
+<td>site</td>
+<td>registrable domain (eTLD+1), <code>www.</code> dropped, IDNA</td>
+<td>one trial per site; sub-domains collapse into the parent</td>
+</tr>
+<tr>
+<td>network</td>
+<td>client IP (<code>Fly-Client-IP</code> / <code>CF-Connecting-IP</code>)</td>
+<td>one trial per IP across all accounts</td>
+</tr>
+</tbody>
+</table>
+<p>Refusal is never a dead end: the project still activates — it just starts
+at 0 credits, <code>project_request.trial_note</code> records the reason, and the
+admin console shows it. Manual approval keeps the mailbox/site checks and
+skips only the network rule (the operator's IP is not the client's);
+an operator can then set quota by hand after review.</p>
+<p>Account-creation is throttled too: 5 registrations per IP per 24h
+(admin-whitelisted addresses exempt), and one account may hold at most
+5 unverified draft projects.</p>
+<p><strong>Enforcement, not just bookkeeping.</strong> <code>quota_total</code> is a hard ceiling:
+the scheduler refuses to schedule more plans than remaining credits
+(<code>generate_plan</code>) and the executor refuses to run more than the credits
+left (<code>due_today</code>). A delivered link consumes exactly one credit
+(<code>quota_used</code> mirrors <code>plan.state='live'</code>). Projects with no portal
+request — our own sites, imports — are uncapped, and so is any request
+marked <code>quota_type='internal'</code>.</p>
+<p>Consequence for the business model: "3 free links" cannot be farmed by
+opening new accounts, aliasing the mailbox, or splitting a site into
+sub-domains, and no amount of couponing turns into unbounded free work.</p>
 <h3>Brand (ratified 2026-11-18)</h3>
 <p><strong>LinkAttest</strong> — production domain <code>linkattest.com</code> (confirmed
 unregistered via whois; purchase pending, an external user action).
@@ -654,7 +703,7 @@ SLA（每日最低提交数）与不达标预警。</p>
 <td>试用</td>
 <td>3 条</td>
 <td style="text-align: right;">免费</td>
-<td>门户自助，14 天窗口，每个已验证域名 1 次</td>
+<td>门户自助，14 天窗口，按「邮箱 + 站点 + 网络」各限一次（见 §试用防刷）</td>
 </tr>
 <tr>
 <td>入门</td>
@@ -679,6 +728,49 @@ SLA（每日最低提交数）与不达标预警。</p>
 <p>服务保障：自动重试 + 人工兜底后仍未到 <code>live</code> 的链接<strong>不计费</strong>。
 非 live 状态（<code>missing</code>/<code>unreachable</code>/<code>bot-blocked</code>）属进行中，
 永不计费。</p>
+<h3>试用防刷（2026-11-18 定稿）</h3>
+<p>免费试用 = 3 条实链，是价目表上唯一「不付钱也能拿到」的东西。因此
+只有三个信号<strong>同时是新的</strong>，项目才发放试用，且每次发放都写进
+<code>trial_ledger</code>：</p>
+<table>
+<thead>
+<tr>
+<th>信号</th>
+<th>归一规则</th>
+<th>限制</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>邮箱</td>
+<td>小写、去 <code>+tag</code>、gmail 去点、googlemail≡gmail</td>
+<td>一个邮箱终身一次</td>
+</tr>
+<tr>
+<td>站点</td>
+<td>可注册域（eTLD+1）、去 <code>www.</code>、IDNA</td>
+<td>一个站点一次；子域归到父域</td>
+</tr>
+<tr>
+<td>网络</td>
+<td>客户端 IP（<code>Fly-Client-IP</code> / <code>CF-Connecting-IP</code>）</td>
+<td>一个 IP 跨所有账号一次</td>
+</tr>
+</tbody>
+</table>
+<p>拒发不是死路：项目照常激活，只是从 0 额度起步，原因写进
+<code>project_request.trial_note</code>，超管后台可见。人工审批保留邮箱／站点
+校验，只跳过网络规则（审批时拿到的是运营者的 IP，不是客户的），
+运营者可复核后手动设额度。</p>
+<p>建号也受限：同一 IP 24 小时内最多注册 5 个（白名单邮箱豁免），
+一个账号最多同时持有 5 个未验证草稿项目。</p>
+<p><strong>是执行，不只是记账。</strong> <code>quota_total</code> 是硬上限：排期侧拒绝排超剩余
+额度的计划（<code>generate_plan</code>），执行侧拒绝跑超剩余额度的计划
+（<code>due_today</code>）；一条实链恰好吃掉一个额度（<code>quota_used</code> 镜像
+<code>plan.state='live'</code>）。没有门户请求的项目（自有站、导入）不受限；
+<code>quota_type='internal'</code> 的自有站同样不受限。</p>
+<p>对商业模式的直接后果：「3 条免费」无法靠开新号、换邮箱别名、把站点
+拆成子域来刷，任何优惠都不会变成无限免费工。</p>
 <h3>品牌（2026-11-18 定稿）</h3>
 <p><strong>LinkAttest</strong> — 生产域名 <code>linkattest.com</code>（whois 确认未注册；购买
 待办，属用户外部动作）。名字直接编码差异点：<em>every link attested

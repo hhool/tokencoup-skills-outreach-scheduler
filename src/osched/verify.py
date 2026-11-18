@@ -25,6 +25,7 @@ import re
 import urllib.parse
 
 from . import probe as probe_mod
+from .guard import sync_quota_used
 
 MAX_ATTEMPTS = 3        # missing-checks before human handoff
 RETRY_AFTER = 2         # days between attempts
@@ -128,6 +129,9 @@ def check_one(conn, row) -> dict:
             "UPDATE plan SET state='live', result_note=? WHERE id=?",
             (json.dumps(note, ensure_ascii=False), row["id"]),
         )
+        # A delivered link consumes a credit — mirror it for the portal and
+        # for the scheduler's credit ceiling (guard.allowance).
+        sync_quota_used(conn, row["project_id"])
     elif outcome["result"] == "missing":
         attempts = conn.execute(
             """SELECT COUNT(*) AS n FROM run_log

@@ -15,6 +15,7 @@ from __future__ import annotations
 import json
 from datetime import date, timedelta
 
+from .guard import allowance
 from .matching import landing_url
 
 CHANNEL_BY_SUBMIT = {
@@ -44,6 +45,24 @@ def generate_plan(conn, project: dict, *, days: int = 7,
         """,
         (project["_id"],),
     ).fetchall()
+
+    # Credit ceiling (guard.credit_cap): a portal project may only schedule
+    # as many plans as it still has unpaid-or-paid credits for. Without this
+    # the "3 free links" trial would be an unlimited work order.
+    room = allowance(conn, project["_id"])
+    if room is not None:
+        if room <= 0:
+            conn.execute(
+                "INSERT INTO run_log(action, target, result, note) "
+                "VALUES('schedule', ?, 'quota', ?)",
+                (project["domain"], json.dumps(
+                    {"scheduled": 0, "reason": "no credits left"})))
+            conn.commit()
+            return {"scheduled": 0, "by_channel": {},
+                    "unscheduled_confirmed": len(confirmed),
+                    "window": f"{start.isoformat()}+{days}d",
+                    "blocked": "quota_exhausted"}
+        confirmed = confirmed[:room]
 
     slots: list[tuple[str, int]] = []   # (scheduled_date, remaining)
     counts: dict[str, int] = {}
@@ -89,9 +108,14 @@ def generate_plan(conn, project: dict, *, days: int = 7,
 
 
 def due_today(conn, project_id: int, today: str | None = None) -> list:
-    """Plan rows the executor should run now (queued, scheduled <= today)."""
+    """Plan rows the executor should run now (queued, scheduled <= today).
+
+    Capped by remaining credits: a portal project never gets more work
+    executed than it still has credits for, even if an operator queued
+    extra plans by hand.
+    """
     today = today or date.today().isoformat()
-    return conn.execute(
+    rows = conn.execute(
         """
         SELECT pl.*, p.url, p.domain AS pool_domain, p.entry_url,
                p.captcha_type, p.contact_email, p.submit_type
@@ -104,3 +128,7 @@ def due_today(conn, project_id: int, today: str | None = None) -> list:
         """,
         (project_id, today),
     ).fetchall()
+    room = allowance(conn, project_id, include_reserved=True)
+    if room is not None:
+        return rows[:room]
+    return rows

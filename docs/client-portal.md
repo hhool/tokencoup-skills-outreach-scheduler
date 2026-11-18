@@ -71,6 +71,39 @@ trial credits — this is the acquisition funnel for the 2B service.
 | trial per domain | 1 | ownership-verified domain is the identity |
 | trial per OAuth identity | 1 | blocks same-person multi-domain farming |
 
+### Anti-abuse guards (delivered 2026-11-18)
+
+Implemented in `src/osched/guard.py`; every grant lands in `trial_ledger`
+(`email_canon`, `reg_domain`, `ip`) so the same signal cannot mint a
+second trial.
+
+| vector | guard |
+|--------|-------|
+| throwaway mailboxes / aliases | `canonical_email()` — `+tag` stripped, gmail dots stripped, googlemail≡gmail; one trial per canonical mailbox |
+| site split into sub-domains | `registrable_domain()` (eTLD+1) — `shop.a.com` collides with `a.com` for both the ledger and the "already claimed" check |
+| second account on the same laptop / office | `client_ip()` reads `Fly-Client-IP`/`CF-Connecting-IP`; one trial per IP, and 5 signups per IP per 24h |
+| draft hoarding | max 5 unverified `project_request` rows per account |
+
+Refusal is graceful: the project activates with `quota_total=0`,
+`quota_type=paid`, and `trial_note` carrying the reason
+(`email_reused` / `site_reused` / `site_claimed` / `ip_reused` /
+`client_used`). The SPA dashboard prints the reason with a package CTA;
+the admin console shows it per project and can set quota manually.
+Manual "approve" runs the mailbox/site checks and skips only the network
+rule, since the approval IP belongs to the operator.
+
+**Credits are enforced, not just displayed:** `guard.credit_cap` /
+`allowance` bound both `scheduler.generate_plan` (won't schedule beyond
+remaining credits) and `scheduler.due_today` (won't execute beyond them);
+`verify.check_one` mirrors each `live` transition into
+`project_request.quota_used`. Projects without a portal request stay
+uncapped (our own sites, imports), and so does any request marked
+`quota_type='internal'` — the escape hatch for operator-owned sites that
+should never be throttled by a customer-facing credit count.
+
+Tests: `PYTHONPATH=src python3 -m pytest tests/test_guard.py -q`
+(24 cases: normalisation, verdict matrix, schedule/execute ceilings).
+
 ## 2. View A — quota consumption (额度消耗)
 
 Two layers: **package credits** (commercial) and **delivery capacity**

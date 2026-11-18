@@ -60,6 +60,34 @@ Google / Facebook OAuth），然后只看两样东西：**额度消耗**（套�
 | 每域名试用 | 1 次 | 已验证域名才是身份 |
 | 每 OAuth 身份试用 | 1 次 | 防同一人多域名刷试用 |
 
+### 试用防刷（2026-11-18 已交付）
+
+实现于 `src/osched/guard.py`；每次发放都落 `trial_ledger`
+（`email_canon`、`reg_domain`、`ip`），同一信号无法刷出第二次。
+
+| 薅法 | 防线 |
+|------|------|
+| 一次性邮箱 / 别名 | `canonical_email()`——去 `+tag`、gmail 去点、googlemail≡gmail；归一后一个邮箱一次 |
+| 把站点拆成子域 | `registrable_domain()`（eTLD+1）——`shop.a.com` 与 `a.com` 在台账和「已被占用」判断里都算同一个 |
+| 同一台电脑/办公室开新号 | `client_ip()` 读 `Fly-Client-IP`/`CF-Connecting-IP`；一个 IP 一次试用，且单 IP 24h 最多 5 次注册 |
+| 囤草稿 | 单账号最多 5 个未验证 `project_request` |
+
+拒发不炸流程：项目照常激活，`quota_total=0`、`quota_type=paid`，
+`trial_note` 记录原因（`email_reused`/`site_reused`/`site_claimed`/
+`ip_reused`/`client_used`）。SPA 看板显示原因并引导选套餐；超管后台
+按项目展示原因、可手动设额度。人工「approve」保留邮箱／站点校验，
+只跳过网络规则（审批 IP 是运营者的）。
+
+**额度是真封顶，不只是显示：** `guard.credit_cap`/`allowance` 同时约束
+`scheduler.generate_plan`（不排超剩余额度）与 `scheduler.due_today`
+（不跑超剩余额度）；`verify.check_one` 每次转 `live` 会把
+`project_request.quota_used` 对齐。没有门户请求的项目（自有站、导入）
+不受限；`quota_type='internal'` 同样不受限——自有站不会被面向客户的
+额度数卡住，这是运营侧的逃生门。
+
+测试：`PYTHONPATH=src python3 -m pytest tests/test_guard.py -q`
+（24 例：归一化、裁决矩阵、排期/执行封顶）。
+
 ## 2. 视图 A — 额度消耗
 
 两层：**套餐额度**（商业层）与**投递产能**（运营透明层）。
