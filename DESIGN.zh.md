@@ -268,7 +268,7 @@ quotas:                  # 护栏，沿用 R-522/R-530 口径
   per_domain_per_day: 100
   per_project_per_day: 10
 
-# projects/<project-domain>.yaml —— 每项目一份
+# projects/<project-domain>.yaml —— 每项目一份（放 data_root/projects/ 下，gitignored——真实域名属用户数据，不入仓库）
 domain: <project-domain>
 tags: [gaming, browser-games, english]
 daily_quota: 10

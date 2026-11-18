@@ -275,7 +275,7 @@ quotas:                  # guardrails (R-522/R-530 conventions)
   per_domain_per_day: 100
   per_project_per_day: 10
 
-# projects/<project-domain>.yaml —— one per project
+# projects/<project-domain>.yaml —— one per project (lives under data_root/projects/, gitignored — real domains are user data and never enter the repo)
 domain: <project-domain>
 tags: [gaming, browser-games, english]
 daily_quota: 10

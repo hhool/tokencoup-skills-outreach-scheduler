@@ -23,9 +23,17 @@ from dataclasses import dataclass, field
 USER_AGENT = "outreach-scheduler/1.0 (+website-submission-discovery)"
 
 # Link href/text patterns that hint at a submit/register endpoint.
+# Multi-language (directory sites are not English-only).
 SUBMIT_LINK_RE = re.compile(
     r"(?:submit|add[-_]?link|add[-_]?url|suggest[-_]?link|add[-_]?site|"
-    r"submission|register|inserisci[-_]?link|anmelden)",
+    r"submission|register|inserisci[-_]?link|anmelden"
+    r"|toevoegen|link[-_]?toevoegen|aanmelden"          # nl
+    r"|ajouter|soumettre"                                # fr
+    r"|anadir|a\u00f1adir|alta"                          # es
+    r"|aggiungi|inserisci"                               # it
+    r"|hinzufuegen|hinzuf\u00fcgen|eintragen"            # de
+    r"|melunak|ekle"                                     # tr
+    r")",
     re.I,
 )
 
