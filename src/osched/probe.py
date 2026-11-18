@@ -67,6 +67,15 @@ EMAIL_SKIP_RE = re.compile(
 
 BLOCK_STATUS = {403, 412, 429}  # Cloudflare anti-bot — keep, mark bot-blocked
 
+# A *submission* form must carry a destination-ish field: that is what we
+# post a landing URL into. "site_name"/"title" alone is a signup wizard.
+URL_FIELD_KEYS = ("url", "link", "website", "homepage", "domain")
+# Credential forms are never submission forms, even when a signup wizard
+# asks for a "site" field on step one.
+CREDENTIAL_FIELD_RE = re.compile(r"(pass|pwd|login|username)", re.I)
+CREDENTIAL_ACTION_RE = re.compile(
+    r"(login|log-in|signin|sign-in|sign_in|wp-login|auth/|session/new)", re.I)
+
 
 @dataclass
 class ProbeResult:
@@ -155,13 +164,22 @@ def find_entry_candidates(html: str, base_url: str, limit: int) -> list[str]:
 
 
 def _looks_like_submit_form(html: str) -> tuple[bool, list[str]]:
-    """A form whose inputs suggest link/product submission."""
+    """A form whose inputs accept a destination URL (not a login/signup)."""
     for form_m in re.finditer(r"<form\b.*?</form>", html, re.I | re.S):
         block = form_m.group(0)
         fields = FORM_FIELD_RE.findall(block)
         names = [f.lower() for f in fields]
-        if any(k in n for n in names for k in ("url", "link", "site", "title", "desc")):
-            return True, fields
+        if not names:
+            continue
+        if any(CREDENTIAL_FIELD_RE.search(n) for n in names):
+            continue        # login / signup / password reset
+        open_tag = block[: block.find(">") + 1]
+        action_m = FORM_ACTION_RE.search(open_tag)
+        if action_m and CREDENTIAL_ACTION_RE.search(action_m.group(1)):
+            continue        # credential endpoint behind a plain form
+        if not any(k in n for n in names for k in URL_FIELD_KEYS):
+            continue        # search box, newsletter box, contact form
+        return True, fields
     return False, []
 
 

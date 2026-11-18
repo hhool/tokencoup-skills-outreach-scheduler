@@ -43,6 +43,20 @@ CUA_CAPTCHAS = {"recaptcha_v2", "recaptcha_v3", "turnstile", "hcaptcha", "image"
 RETRYABLE_HTTP = set(range(500, 600))
 MAX_RETRIES = 3
 
+# Wave-3 rows never auto-execute: submit_type='unknown' means nobody has
+# worked out *how* to submit there yet, and a blind POST to a random page is
+# worse than no attempt. They go to the human queue until a how is recorded.
+UNTYPED_SUBMIT = {"", "unknown"}
+
+# R-520: outreach mail is human-sent. A project must opt in explicitly with
+# `delivery: {email_auto: true}` before the executor touches SMTP.
+EMAIL_AUTO_DEFAULT = False
+
+
+def _email_auto(project: dict) -> bool:
+    return bool((project.get("delivery") or {}).get("email_auto",
+                                                    EMAIL_AUTO_DEFAULT))
+
 USER_AGENT = probe_mod.USER_AGENT
 
 # Built-in generic templates (fallback when data_root/templates/<id>.txt is
@@ -199,16 +213,19 @@ def exec_form(conn, cfg: dict, project: dict, row, ctx: dict,
         return {"state": "failed", "note": "entry page unreachable",
                 "retries": MAX_RETRIES}
 
+    # No form on the live page = nothing for any channel to submit. Checked
+    # before captcha routing: a stale cached captcha must not send a browser
+    # to a page that has no submission form at all.
+    if not fields:
+        return {"state": "human",
+                "note": "no usable form fields at execution time"}
+
     # Captcha tier routing (§7.1) — use the live reading, cache as backstop.
     cap = captcha if captcha != "none" else (row["captcha_type"] or "none")
     if cap in CUA_CAPTCHAS:
         return {"state": "cua", "note": f"captcha={cap} -> CUA channel"}
     if cap not in ("none",):
         return {"state": "human", "note": f"captcha={cap} unknown -> human queue"}
-
-    if not fields:
-        return {"state": "human",
-                "note": "no usable form fields at execution time"}
 
     if dry_run:
         return {"state": "dry-run",
@@ -305,7 +322,9 @@ def exec_email(conn, cfg: dict, project: dict, row, ctx: dict,
 def _finish(conn, plan_id: int, outcome: dict, *, dry_run: bool) -> None:
     if dry_run:
         return  # never mutate state on a dry run
-    state = outcome.pop("state")
+    # Keep "state" in the dict: the caller logs it right after this call.
+    state = outcome["state"]
+    note = {k: v for k, v in outcome.items() if k != "state"}
     conn.execute(
         """
         UPDATE plan SET state=?, executed_at=datetime('now'),
@@ -313,7 +332,7 @@ def _finish(conn, plan_id: int, outcome: dict, *, dry_run: bool) -> None:
             result_note=?
         WHERE id=?
         """,
-        (state, state, json.dumps(outcome, ensure_ascii=False), plan_id),
+        (state, state, json.dumps(note, ensure_ascii=False), plan_id),
     )
 
 
@@ -336,7 +355,14 @@ def run_execution(conn, cfg: dict, project: dict, *, run_date: str | None = None
             continue
         ctx = build_context(conn, project, row)
         try:
-            if channel == "form":
+            if channel == "form" and (row["submit_type"] or "") in UNTYPED_SUBMIT:
+                outcome = {"state": "human",
+                           "note": "submit_type unknown — needs how (wave3)"}
+            elif channel == "email" and not _email_auto(project):
+                outcome = {"state": "human",
+                           "note": "email channel is manual (R-520) — "
+                                   "queued for human send"}
+            elif channel == "form":
                 outcome = exec_form(conn, cfg, project, row, ctx, dry_run)
             elif channel == "email":
                 outcome = exec_email(conn, cfg, project, row, ctx, dry_run)

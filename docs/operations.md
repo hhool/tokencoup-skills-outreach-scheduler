@@ -1,5 +1,43 @@
 # Operations — cron wiring & daily rhythm
 
+## Pool bridge — workbench ledger -> pool
+
+A harvested pool (WDC-style crawls) is full of **web-2.0 property roots**:
+blogspot, wordpress.com, reddit, tumblr. Those need an account and a post,
+not a form POST, so they classify as `submit_type=unknown` and stall in the
+wave-3 human queue. The curated ledger the SEO workbench keeps per site
+(`~/seo/<site>/targets.jsonl`) already answers that question per target.
+
+Bridge it one way:
+
+```
+python3 bin/osched.py import-workbench ~/seo/<site>/targets.jsonl [--min-fit 50]
+```
+
+Rules enforced by the importer (`src/osched/workbench.py`):
+
+- **One way.** The workbench stays the ledger of record (status, link_state,
+  evidence). We read a snapshot; nothing writes back. Re-import is idempotent.
+- **Dedupe by pay-level domain.** An existing pool row for the domain is
+  upgraded in place; its `submit_url` becomes `entry_url` only when the row
+  has none (a specific endpoint is never replaced by a root URL).
+- **No downgrades.** A ledger row with `submit_type=unknown` never overwrites
+  a probed/curated type — that would push the plan back to wave 3 for nothing.
+- **`dropped` targets are skipped.** `working` / `pending` / `done` are kept.
+- Curated rows carry `fit_score` in `hints_json`; matching treats it as the
+  evidence prior and lets the row into the pending queue without clearing
+  `min_score` (`scoring.curated_trust: true`, default). The human `confirm`
+  gate still stands between the queue and delivery.
+
+## Execution gates (why a due plan goes to `human`)
+
+| gate | rule | why |
+|------|------|-----|
+| wave-3 | `submit_type=unknown` never auto-executes | nobody knows *how* to submit; a blind POST to a random page is worse than no attempt |
+| email | `channel=email` is manual unless `delivery: {email_auto: true}` | R-520: outreach mail is human-sent |
+| form | live page must expose a form with a URL-ish field | login / signup / search / newsletter boxes are not submission forms |
+| captcha | browser-class captcha -> `cua`; unknown -> `human` | §7.1 tiers; a stale cached captcha never routes a formless page to a browser |
+
 ## Cron entry points
 
 `scripts/daily.sh` is the only cron entry. Two segments:

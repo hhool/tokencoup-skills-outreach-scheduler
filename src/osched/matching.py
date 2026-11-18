@@ -76,6 +76,20 @@ def competitor_prior(evidence_json: str) -> float:
     return score
 
 
+def curated_fit(hints_json: str) -> int:
+    """Curated fit 0..100 from the workbench bridge, 0 when absent."""
+    try:
+        h = json.loads(hints_json or "{}")
+    except json.JSONDecodeError:
+        return 0
+    if not h.get("workbench_id"):
+        return 0
+    try:
+        return max(0, min(100, int(h.get("fit_score") or 0)))
+    except (TypeError, ValueError):
+        return 0
+
+
 def score_row(row, project: dict[str, Any]) -> tuple[float, dict]:
     """Score one pool row against the project. Returns (score, detail)."""
     w = project["scoring"]["weights"]
@@ -86,6 +100,10 @@ def score_row(row, project: dict[str, Any]) -> tuple[float, dict]:
     wave = WAVE_PRIORITY.get(row["wave"], 0.0)
     dr = (row["dr"] or 0.0) / 10.0
     prior = competitor_prior(row["evidence_json"])
+    # A curated ledger row carries a human fit score instead of crawl
+    # evidence; both answer the same question ("why is this a candidate").
+    fit = curated_fit(row["hints_json"])
+    prior = max(prior, fit / 100.0)
 
     score = (w["category"] * category + w["geo"] * geo + w["wave"] * wave
              + w["dr"] * dr + w["via_competitors"] * prior)
@@ -121,13 +139,19 @@ def run_match(conn, project: dict[str, Any], *, limit: int = 0) -> dict:
     ).fetchall()
 
     inserted = skipped_excluded = below_threshold = 0
+    trust_curated = bool(project["scoring"].get("curated_trust", True))
     for row in rows:
         dom = (row["domain"] or "").lower()
         if any(ex in dom for ex in exclusions):
             skipped_excluded += 1
             continue
         score, detail = score_row(row, project)
-        if score < min_score:
+        # The min_score gate exists to keep noisy crawl rows out of the human
+        # queue. A curated ledger row already passed human review, so it enters
+        # the queue on its own fit — the confirm gate still guards delivery.
+        curated = curated_fit(row["hints_json"]) > 0
+        detail["curated"] = curated
+        if score < min_score and not (curated and trust_curated):
             below_threshold += 1
             continue
         conn.execute(

@@ -64,6 +64,62 @@ footer { text-align:center; color:var(--muted); font-size:13px; padding:20px; }
   </div>
 </header>
 <main><article><div data-lang-en="1"><h1 style="display:none">Operations — cron wiring &amp; daily rhythm</h1><h1>Operations — cron wiring &amp; daily rhythm</h1>
+<h2>Pool bridge — workbench ledger -&gt; pool</h2>
+<p>A harvested pool (WDC-style crawls) is full of <strong>web-2.0 property roots</strong>:
+blogspot, wordpress.com, reddit, tumblr. Those need an account and a post,
+not a form POST, so they classify as <code>submit_type=unknown</code> and stall in the
+wave-3 human queue. The curated ledger the SEO workbench keeps per site
+(<code>~/seo/&lt;site&gt;/targets.jsonl</code>) already answers that question per target.</p>
+<p>Bridge it one way:</p>
+<pre><code>python3 bin/osched.py import-workbench ~/seo/&lt;site&gt;/targets.jsonl [--min-fit 50]
+</code></pre>
+<p>Rules enforced by the importer (<code>src/osched/workbench.py</code>):</p>
+<ul>
+<li><strong>One way.</strong> The workbench stays the ledger of record (status, link_state,
+  evidence). We read a snapshot; nothing writes back. Re-import is idempotent.</li>
+<li><strong>Dedupe by pay-level domain.</strong> An existing pool row for the domain is
+  upgraded in place; its <code>submit_url</code> becomes <code>entry_url</code> only when the row
+  has none (a specific endpoint is never replaced by a root URL).</li>
+<li><strong>No downgrades.</strong> A ledger row with <code>submit_type=unknown</code> never overwrites
+  a probed/curated type — that would push the plan back to wave 3 for nothing.</li>
+<li><strong><code>dropped</code> targets are skipped.</strong> <code>working</code> / <code>pending</code> / <code>done</code> are kept.</li>
+<li>Curated rows carry <code>fit_score</code> in <code>hints_json</code>; matching treats it as the
+  evidence prior and lets the row into the pending queue without clearing
+  <code>min_score</code> (<code>scoring.curated_trust: true</code>, default). The human <code>confirm</code>
+  gate still stands between the queue and delivery.</li>
+</ul>
+<h2>Execution gates (why a due plan goes to <code>human</code>)</h2>
+<table>
+<thead>
+<tr>
+<th>gate</th>
+<th>rule</th>
+<th>why</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>wave-3</td>
+<td><code>submit_type=unknown</code> never auto-executes</td>
+<td>nobody knows <em>how</em> to submit; a blind POST to a random page is worse than no attempt</td>
+</tr>
+<tr>
+<td>email</td>
+<td><code>channel=email</code> is manual unless <code>delivery: {email_auto: true}</code></td>
+<td>R-520: outreach mail is human-sent</td>
+</tr>
+<tr>
+<td>form</td>
+<td>live page must expose a form with a URL-ish field</td>
+<td>login / signup / search / newsletter boxes are not submission forms</td>
+</tr>
+<tr>
+<td>captcha</td>
+<td>browser-class captcha -&gt; <code>cua</code>; unknown -&gt; <code>human</code></td>
+<td>§7.1 tiers; a stale cached captcha never routes a formless page to a browser</td>
+</tr>
+</tbody>
+</table>
 <h2>Cron entry points</h2>
 <p><code>scripts/daily.sh</code> is the only cron entry. Two segments:</p>
 <table>
@@ -147,6 +203,60 @@ budget); a laptop on mobile broadband changes IPs and will need rebinding.</p>
 </table>
 <p>中文说明见 operations.zh.md。</p></div>
 <div data-lang-en="0" style="display:none"><h1 style="display:none">运维手册 — cron 接线与每日节奏</h1><h1>运维手册 — cron 接线与每日节奏</h1>
+<h2>Pool 桥接 —— workbench 台账 → pool</h2>
+<p>爬取来的 pool（WDC 类）里大量是<strong>web2.0 平台根域名</strong>：blogspot、
+wordpress.com、reddit、tumblr。这些要「开户 + 发文」，不是表单直投，
+所以一律归为 <code>submit_type=unknown</code>，卡在 wave3 人工队列。而 SEO 工作台
+按站点维护的策展台账（<code>~/seo/&lt;site&gt;/targets.jsonl</code>）已经逐条回答了这个
+问题。</p>
+<p>单向桥接：</p>
+<pre><code>python3 bin/osched.py import-workbench ~/seo/&lt;site&gt;/targets.jsonl [--min-fit 50]
+</code></pre>
+<p>导入器（<code>src/osched/workbench.py</code>）强制以下规则：</p>
+<ul>
+<li><strong>单向</strong>：workbench 仍是台账主（status / link_state / 证据都在那边），
+  这里只读快照，永不回写；重复导入幂等。</li>
+<li><strong>按可注册域去重</strong>：已有 pool 行就地升级；<code>submit_url</code> 只在
+  <code>entry_url</code> 为空时写入（具体端点绝不被根 URL 覆盖）。</li>
+<li><strong>不允许降级</strong>：台账里 <code>submit_type=unknown</code> 的行不会覆盖已探测/已策展
+  的类型——那只会把计划无缘无故打回 wave3。</li>
+<li><strong>跳过 <code>dropped</code></strong>：保留 <code>working</code> / <code>pending</code> / <code>done</code>。</li>
+<li>策展行的 <code>fit_score</code> 存进 <code>hints_json</code>，匹配时当作证据先验，并允许
+  该行绕过 <code>min_score</code> 进待确认队列（<code>scoring.curated_trust: true</code>，默认开）。
+  人工 <code>confirm</code> 闸仍在队列与投递之间。</li>
+</ul>
+<h2>执行闸门（到期计划为何落 <code>human</code>）</h2>
+<table>
+<thead>
+<tr>
+<th>闸门</th>
+<th>规则</th>
+<th>原因</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>wave3</td>
+<td><code>submit_type=unknown</code> 永不自动执行</td>
+<td>还没人搞清「怎么投」；盲投到随机页比不投更糟</td>
+</tr>
+<tr>
+<td>邮件</td>
+<td><code>channel=email</code> 默认人工，除非项目声明 <code>delivery: {email_auto: true}</code></td>
+<td>R-520：外联邮件人工发送</td>
+</tr>
+<tr>
+<td>表单</td>
+<td>实时页面必须存在含 url 类字段的表单</td>
+<td>登录/注册/搜索/订阅框不是提交表单</td>
+</tr>
+<tr>
+<td>验证码</td>
+<td>浏览器类 → <code>cua</code>；未知 → <code>human</code></td>
+<td>§7.1 分级；缓存的旧验证码不会把无表单页面送进浏览器</td>
+</tr>
+</tbody>
+</table>
 <h2>Cron 入口</h2>
 <p><code>scripts/daily.sh</code> 是唯一 cron 入口，两个段：</p>
 <table>

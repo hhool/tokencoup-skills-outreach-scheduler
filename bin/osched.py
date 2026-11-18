@@ -482,6 +482,11 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--config", default=None, help="path to global YAML")
     sub = ap.add_subparsers(dest="cmd", required=True)
     sub.add_parser("import", help="run import sources into the pool")
+    p_wb = sub.add_parser(
+        "import-workbench",
+        help="one-way import of a workbench targets.jsonl ledger into the pool")
+    p_wb.add_argument("file")
+    p_wb.add_argument("--min-fit", type=int, default=0)
     p_probe = sub.add_parser("probe", help="probe unprobed pool entries")
     p_probe.add_argument("--limit", type=int, default=None)
     p_probe.add_argument("--domain", default=None)
@@ -585,6 +590,12 @@ def main(argv: list[str] | None = None) -> int:
     cfg = load_config(args.config)
     if args.cmd == "import":
         return cmd_import(cfg)
+    if args.cmd == "import-workbench":
+        from osched.workbench import import_targets
+        conn = connect(data_root(cfg))
+        stats = import_targets(conn, args.file, min_fit=args.min_fit)
+        print("import-workbench: " + json.dumps(stats, ensure_ascii=False))
+        return 0
     if args.cmd == "probe":
         limit = args.limit or int(cfg.get("probe", {}).get("per_run_limit", 20))
         return cmd_probe(cfg, limit, args.domain)
