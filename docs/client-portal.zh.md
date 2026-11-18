@@ -201,6 +201,8 @@ wrangler pages deploy frontend --project-name osched-portal --branch main
 
 ### 线上端点（2026-11-18）
 
+- 品牌/生产域名：**LinkAttest** → `linkattest.com`（2026-11-18 定稿，
+  购买待办——见下方绑定步骤；绑定前 pages.dev 即线上前端）
 - 前端：https://osched-portal.pages.dev（Cloudflare Pages，项目
   `osched-portal`，账号 ***REMOVED-CF-ACCT***…）
 - 后端 API：https://tokencoup-skills-outreach-scheduler.fly.dev/api/*
@@ -209,3 +211,24 @@ wrangler pages deploy frontend --project-name osched-portal --branch main
 - 同域名的旧版 HTML 门户保留作回退。
 - CORS 端到端已验证：preflight 204，未带 token 的 /api/dashboard
   返回 401 JSON。
+
+### 自定义域名绑定（linkattest.com 购买后执行）
+
+每个面一次 API 调用，用账号级 CF token（sextant-account-zone，
+已验证含 Pages:Edit 权限）：
+
+```bash
+CF_TOKEN=...   # 账号级 token，含 Pages:Edit
+CF_ACCT=***REMOVED-CF-ACCT***...
+
+# 1. 把域名挂到 Pages 项目（NS/记录指向 CF 后，CF 自动校验并发证书）
+curl -X POST "https://api.cloudflare.com/client/v4/accounts/$CF_ACCT/pages/projects/osched-portal/domains" \
+  -H "Authorization: Bearer $CF_TOKEN" -H "Content-Type: application/json" \
+  --data '{"name":"linkattest.com"}'
+
+# 2. apex + www CNAME 到 pages.dev 目标
+#    （控制台或 DNS records API；apex 用 CNAME flattening）
+```
+
+后端若也换自定义域名才需更新 `frontend/app.js` 的 `API_BASE`；
+否则 pages.dev → fly.dev 的 CORS 路径保持不变。

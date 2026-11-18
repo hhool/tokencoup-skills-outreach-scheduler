@@ -224,6 +224,9 @@ same machine via `scripts/start.sh` (port 8080, `[http_service]`).
 
 ### Live endpoints (2026-11-18)
 
+- brand / production domain: **LinkAttest** → `linkattest.com`
+  (ratified 2026-11-18, purchase pending — see binding steps below;
+  until bound, the pages.dev URL is the live frontend)
 - frontend: https://osched-portal.pages.dev (Cloudflare Pages,
   project `osched-portal`, account ***REMOVED-CF-ACCT***…)
 - backend API: https://tokencoup-skills-outreach-scheduler.fly.dev/api/*
@@ -232,3 +235,25 @@ same machine via `scripts/start.sh` (port 8080, `[http_service]`).
 - legacy HTML portal on the same fly domain stays as a fallback.
 - CORS verified end-to-end: preflight 204, unauthenticated /api/dashboard
   returns 401 JSON.
+
+### Custom-domain binding (after linkattest.com is purchased)
+
+One API call per surface, using the account-level CF token
+(sextant-account-zone token, Pages:Edit already verified):
+
+```bash
+CF_TOKEN=...   # account token with Pages:Edit
+CF_ACCT=***REMOVED-CF-ACCT***...
+
+# 1. attach the domain to the Pages project (CF validates + provisions
+#    the certificate automatically once NS/records point at CF)
+curl -X POST "https://api.cloudflare.com/client/v4/accounts/$CF_ACCT/pages/projects/osched-portal/domains" \
+  -H "Authorization: Bearer $CF_TOKEN" -H "Content-Type: application/json" \
+  --data '{"name":"linkattest.com"}'
+
+# 2. apex + www CNAME to the pages.dev target
+#    (via dashboard or DNS records API; apex uses CNAME flattening)
+```
+
+Also update `API_BASE` in `frontend/app.js` only if the backend gets
+its own domain; otherwise pages.dev → fly.dev CORS path stays as-is.

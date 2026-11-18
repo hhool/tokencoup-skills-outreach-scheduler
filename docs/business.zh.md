@@ -167,3 +167,13 @@ WDC 竞品收割从手动导入升级为定时刷新：新目录自动入池 →
 服务保障：自动重试 + 人工兜底后仍未到 `live` 的链接**不计费**。
 非 live 状态（`missing`/`unreachable`/`bot-blocked`）属进行中，
 永不计费。
+
+### 品牌（2026-11-18 定稿）
+
+**LinkAttest** — 生产域名 `linkattest.com`（whois 确认未注册；购买
+待办，属用户外部动作）。名字直接编码差异点：*every link attested
+live*——实链台账就是出证，出证就是开票引用的凭证。内部仓库/代号
+（`outreach-scheduler`、`osched`）不变，品牌只做对外门面。
+
+用品牌语表述定位公式：**比 Respona 级 SaaS 每实链更便宜，比代做
+服务商出证更硬。**

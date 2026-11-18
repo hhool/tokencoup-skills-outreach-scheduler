@@ -336,6 +336,9 @@ wrangler pages deploy frontend --project-name osched-portal --branch main
 same machine via <code>scripts/start.sh</code> (port 8080, <code>[http_service]</code>).</p>
 <h3>Live endpoints (2026-11-18)</h3>
 <ul>
+<li>brand / production domain: <strong>LinkAttest</strong> → <code>linkattest.com</code>
+  (ratified 2026-11-18, purchase pending — see binding steps below;
+  until bound, the pages.dev URL is the live frontend)</li>
 <li>frontend: https://osched-portal.pages.dev (Cloudflare Pages,
   project <code>osched-portal</code>, account ***REMOVED-CF-ACCT***…)</li>
 <li>backend API: https://tokencoup-skills-outreach-scheduler.fly.dev/api/*
@@ -344,7 +347,24 @@ same machine via <code>scripts/start.sh</code> (port 8080, <code>[http_service]<
 <li>legacy HTML portal on the same fly domain stays as a fallback.</li>
 <li>CORS verified end-to-end: preflight 204, unauthenticated /api/dashboard
   returns 401 JSON.</li>
-</ul></div>
+</ul>
+<h3>Custom-domain binding (after linkattest.com is purchased)</h3>
+<p>One API call per surface, using the account-level CF token
+(sextant-account-zone token, Pages:Edit already verified):</p>
+<pre><code class="language-bash">CF_TOKEN=...   # account token with Pages:Edit
+CF_ACCT=***REMOVED-CF-ACCT***...
+
+# 1. attach the domain to the Pages project (CF validates + provisions
+#    the certificate automatically once NS/records point at CF)
+curl -X POST &quot;https://api.cloudflare.com/client/v4/accounts/$CF_ACCT/pages/projects/osched-portal/domains&quot; \
+  -H &quot;Authorization: Bearer $CF_TOKEN&quot; -H &quot;Content-Type: application/json&quot; \
+  --data '{&quot;name&quot;:&quot;linkattest.com&quot;}'
+
+# 2. apex + www CNAME to the pages.dev target
+#    (via dashboard or DNS records API; apex uses CNAME flattening)
+</code></pre>
+<p>Also update <code>API_BASE</code> in <code>frontend/app.js</code> only if the backend gets
+its own domain; otherwise pages.dev → fly.dev CORS path stays as-is.</p></div>
 <div data-lang-en="0" style="display:none"><h1 style="display:none">客户端门户 — 注册登录与看板设计</h1><h1>客户端门户 — 注册登录与看板设计</h1>
 <p><strong>范围</strong>：商业化轨道的客户端 Web 门面。客户用邮箱注册/登录（含
 Google / Facebook OAuth），然后只看两样东西：<strong>额度消耗</strong>（套餐买了
@@ -595,6 +615,8 @@ wrangler pages deploy frontend --project-name osched-portal --branch main
 （8080 端口，<code>[http_service]</code>）。</p>
 <h3>线上端点（2026-11-18）</h3>
 <ul>
+<li>品牌/生产域名：<strong>LinkAttest</strong> → <code>linkattest.com</code>（2026-11-18 定稿，
+  购买待办——见下方绑定步骤；绑定前 pages.dev 即线上前端）</li>
 <li>前端：https://osched-portal.pages.dev（Cloudflare Pages，项目
   <code>osched-portal</code>，账号 ***REMOVED-CF-ACCT***…）</li>
 <li>后端 API：https://tokencoup-skills-outreach-scheduler.fly.dev/api/*
@@ -603,7 +625,23 @@ wrangler pages deploy frontend --project-name osched-portal --branch main
 <li>同域名的旧版 HTML 门户保留作回退。</li>
 <li>CORS 端到端已验证：preflight 204，未带 token 的 /api/dashboard
   返回 401 JSON。</li>
-</ul></div></article></main>
+</ul>
+<h3>自定义域名绑定（linkattest.com 购买后执行）</h3>
+<p>每个面一次 API 调用，用账号级 CF token（sextant-account-zone，
+已验证含 Pages:Edit 权限）：</p>
+<pre><code class="language-bash">CF_TOKEN=...   # 账号级 token，含 Pages:Edit
+CF_ACCT=***REMOVED-CF-ACCT***...
+
+# 1. 把域名挂到 Pages 项目（NS/记录指向 CF 后，CF 自动校验并发证书）
+curl -X POST &quot;https://api.cloudflare.com/client/v4/accounts/$CF_ACCT/pages/projects/osched-portal/domains&quot; \
+  -H &quot;Authorization: Bearer $CF_TOKEN&quot; -H &quot;Content-Type: application/json&quot; \
+  --data '{&quot;name&quot;:&quot;linkattest.com&quot;}'
+
+# 2. apex + www CNAME 到 pages.dev 目标
+#    （控制台或 DNS records API；apex 用 CNAME flattening）
+</code></pre>
+<p>后端若也换自定义域名才需更新 <code>frontend/app.js</code> 的 <code>API_BASE</code>；
+否则 pages.dev → fly.dev 的 CORS 路径保持不变。</p></div></article></main>
 <footer>bilingual docs · built from .md sources</footer>
 <script>
 (function(){

@@ -196,3 +196,15 @@ Tiers (recommended defaults, numbers adjustable):
 Service guarantee: a link that never reaches `live` after auto-retry +
 human fallback is **not billed**. Non-live states (`missing`,
 `unreachable`, `bot-blocked`) are work-in-progress, never billed.
+
+### Brand (ratified 2026-11-18)
+
+**LinkAttest** — production domain `linkattest.com` (confirmed
+unregistered via whois; purchase pending, an external user action).
+The name encodes the differentiation directly: *every link attested
+live* — the live-link ledger is the attestation, and the attestation is
+what the invoice cites. Internal repo/codename (`outreach-scheduler`,
+`osched`) stays unchanged; the brand is the external face only.
+
+Positioning formula in brand terms: **cheaper per live link than
+Respona-class SaaS, harder attestation than done-for-you agencies.**
