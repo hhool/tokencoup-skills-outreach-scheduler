@@ -198,3 +198,14 @@ wrangler pages deploy frontend --project-name osched-portal --branch main
 
 见 docs/deployment.zh.md；门户经 `scripts/start.sh` 跑在同一台机器
 （8080 端口，`[http_service]`）。
+
+### 线上端点（2026-11-18）
+
+- 前端：https://osched-portal.pages.dev（Cloudflare Pages，项目
+  `osched-portal`，账号 ***REMOVED-CF-ACCT***…）
+- 后端 API：https://tokencoup-skills-outreach-scheduler.fly.dev/api/*
+  （fly 专用入口 v4 ***REMOVED-FLY-IPV4*** / v6 ***REMOVED-FLY-IPV6***；
+  这两个固定 IP 同时是 OPR key 改绑目标）
+- 同域名的旧版 HTML 门户保留作回退。
+- CORS 端到端已验证：preflight 204，未带 token 的 /api/dashboard
+  返回 401 JSON。

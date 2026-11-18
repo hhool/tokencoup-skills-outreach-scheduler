@@ -221,3 +221,14 @@ Non-interactive shells need `CLOUDFLARE_API_TOKEN` (Pages: Edit).
 
 Unchanged from docs/deployment.md, plus: the portal runs inside the
 same machine via `scripts/start.sh` (port 8080, `[http_service]`).
+
+### Live endpoints (2026-11-18)
+
+- frontend: https://osched-portal.pages.dev (Cloudflare Pages,
+  project `osched-portal`, account ***REMOVED-CF-ACCT***…)
+- backend API: https://tokencoup-skills-outreach-scheduler.fly.dev/api/*
+  (fly dedicated ingress v4 ***REMOVED-FLY-IPV4*** / v6 ***REMOVED-FLY-IPV6***;
+  these fixed IPs are also the OPR key rebinding target)
+- legacy HTML portal on the same fly domain stays as a fallback.
+- CORS verified end-to-end: preflight 204, unauthenticated /api/dashboard
+  returns 401 JSON.

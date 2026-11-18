@@ -333,7 +333,18 @@ wrangler pages deploy frontend --project-name osched-portal --branch main
 <p>Non-interactive shells need <code>CLOUDFLARE_API_TOKEN</code> (Pages: Edit).</p>
 <h3>Deploy steps — backend (fly.io)</h3>
 <p>Unchanged from docs/deployment.md, plus: the portal runs inside the
-same machine via <code>scripts/start.sh</code> (port 8080, <code>[http_service]</code>).</p></div>
+same machine via <code>scripts/start.sh</code> (port 8080, <code>[http_service]</code>).</p>
+<h3>Live endpoints (2026-11-18)</h3>
+<ul>
+<li>frontend: https://osched-portal.pages.dev (Cloudflare Pages,
+  project <code>osched-portal</code>, account ***REMOVED-CF-ACCT***…)</li>
+<li>backend API: https://tokencoup-skills-outreach-scheduler.fly.dev/api/*
+  (fly dedicated ingress v4 ***REMOVED-FLY-IPV4*** / v6 ***REMOVED-FLY-IPV6***;
+  these fixed IPs are also the OPR key rebinding target)</li>
+<li>legacy HTML portal on the same fly domain stays as a fallback.</li>
+<li>CORS verified end-to-end: preflight 204, unauthenticated /api/dashboard
+  returns 401 JSON.</li>
+</ul></div>
 <div data-lang-en="0" style="display:none"><h1 style="display:none">客户端门户 — 注册登录与看板设计</h1><h1>客户端门户 — 注册登录与看板设计</h1>
 <p><strong>范围</strong>：商业化轨道的客户端 Web 门面。客户用邮箱注册/登录（含
 Google / Facebook OAuth），然后只看两样东西：<strong>额度消耗</strong>（套餐买了
@@ -581,7 +592,18 @@ wrangler pages deploy frontend --project-name osched-portal --branch main
 <p>非交互 shell 需要 <code>CLOUDFLARE_API_TOKEN</code>（Pages: Edit 权限）。</p>
 <h3>后端部署步骤（fly.io）</h3>
 <p>见 docs/deployment.zh.md；门户经 <code>scripts/start.sh</code> 跑在同一台机器
-（8080 端口，<code>[http_service]</code>）。</p></div></article></main>
+（8080 端口，<code>[http_service]</code>）。</p>
+<h3>线上端点（2026-11-18）</h3>
+<ul>
+<li>前端：https://osched-portal.pages.dev（Cloudflare Pages，项目
+  <code>osched-portal</code>，账号 ***REMOVED-CF-ACCT***…）</li>
+<li>后端 API：https://tokencoup-skills-outreach-scheduler.fly.dev/api/*
+  （fly 专用入口 v4 ***REMOVED-FLY-IPV4*** / v6 ***REMOVED-FLY-IPV6***；
+  这两个固定 IP 同时是 OPR key 改绑目标）</li>
+<li>同域名的旧版 HTML 门户保留作回退。</li>
+<li>CORS 端到端已验证：preflight 204，未带 token 的 /api/dashboard
+  返回 401 JSON。</li>
+</ul></div></article></main>
 <footer>bilingual docs · built from .md sources</footer>
 <script>
 (function(){
