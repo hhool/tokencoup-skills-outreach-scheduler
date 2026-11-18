@@ -220,13 +220,29 @@ wrangler pages deploy frontend --project-name osched-portal --branch main
 - CORS 端到端已验证：preflight 204，未带 token 的 /api/dashboard
   返回 401 JSON。
 
-### 自定义域名绑定（linkattest.com 购买后执行）
+### 自定义域名绑定（linkattest.com —— 2026-11-18 已执行，等待 NS 生效）
 
-每个面一次 API 调用，用账号级 CF token（sextant-account-zone，
-已验证含 Pages:Edit 权限）：
+2026-11-18 已完成的步骤（Namecheap 注册 → CF zone → Pages 域 → DNS）：
+
+| 项 | 值 |
+|------|------|
+| CF zone id | `***REMOVED-CF-ZONE-ID***`（账号 ***REMOVED-CF-ACCT***…） |
+| 指定 NS | `bowen.ns.cloudflare.com` / `saanvi.ns.cloudflare.com` |
+| DNS 记录 | apex `linkattest.com` CNAME → `osched-portal.pages.dev`（proxied）<br>`www.linkattest.com` CNAME → 同上（proxied） |
+| Pages 自定义域 | `linkattest.com` + `www.linkattest.com`，状态 initializing |
+
+**剩余唯一人工步骤**：Namecheap 面板 → Domain List → linkattest.com →
+Manage → Nameservers 选 **Custom DNS**，填上面两个 NS，保存。生效
+通常 0.5–2 小时（最长 24h）。CF zone 变 active 后 Pages 自动签发证书。
+
+NS 生效后：把 fly 的 `PORTAL_FRONTEND_URL` 从
+`https://***REMOVED-REVOKED-DOMAIN***/app/` 换成 `https://linkattest.com/app/`
+（`fly secrets set` + 部署）；OAuth 回调 URI 仍在 fly.dev，不受影响。
+
+原始 API 步骤（重做时参考）：
 
 ```bash
-CF_TOKEN=...   # 账号级 token，含 Pages:Edit
+CF_TOKEN=...   # 账号级 token，含 Pages:Edit（钥匙串 sextant/cloudflare/default）
 CF_ACCT=***REMOVED-CF-ACCT***...
 
 # 1. 把域名挂到 Pages 项目（NS/记录指向 CF 后，CF 自动校验并发证书）

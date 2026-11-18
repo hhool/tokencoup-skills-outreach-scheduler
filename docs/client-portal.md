@@ -235,8 +235,8 @@ same machine via `scripts/start.sh` (port 8080, `[http_service]`).
 ### Live endpoints (2026-11-18)
 
 - brand / production domain: **LinkAttest** → `linkattest.com`
-  (ratified 2026-11-18, purchase pending — see binding steps below;
-  until bound, the pages.dev URL is the live frontend)
+  (registered 2026-11-18, Namecheap; CF zone + Pages domain + DNS
+  records in place — awaiting the NS switch, see binding steps below)
 - frontend: https://osched-portal.pages.dev (Cloudflare Pages,
   project `osched-portal`, account ***REMOVED-CF-ACCT***…)
 - backend API: https://tokencoup-skills-outreach-scheduler.fly.dev/api/*
@@ -246,13 +246,31 @@ same machine via `scripts/start.sh` (port 8080, `[http_service]`).
 - CORS verified end-to-end: preflight 204, unauthenticated /api/dashboard
   returns 401 JSON.
 
-### Custom-domain binding (after linkattest.com is purchased)
+### Custom-domain binding (linkattest.com — executed 2026-11-18, awaiting NS)
 
-One API call per surface, using the account-level CF token
-(sextant-account-zone token, Pages:Edit already verified):
+Done on 2026-11-18 (Namecheap registration → CF zone → Pages domain → DNS):
+
+| item | value |
+|------|-------|
+| CF zone id | `***REMOVED-CF-ZONE-ID***` (account ***REMOVED-CF-ACCT***…) |
+| assigned NS | `bowen.ns.cloudflare.com` / `saanvi.ns.cloudflare.com` |
+| DNS records | apex `linkattest.com` CNAME → `osched-portal.pages.dev` (proxied)<br>`www.linkattest.com` CNAME → same (proxied) |
+| Pages custom domains | `linkattest.com` + `www.linkattest.com`, status initializing |
+
+**Only remaining manual step**: Namecheap dashboard → Domain List →
+linkattest.com → Manage → Nameservers → **Custom DNS**, enter the two NS
+above, save. Propagation is usually 0.5–2 h (24 h worst case). Once the
+CF zone turns active, Pages issues the certificate automatically.
+
+After NS is live: switch fly's `PORTAL_FRONTEND_URL` from
+`https://***REMOVED-REVOKED-DOMAIN***/app/` to `https://linkattest.com/app/`
+(`fly secrets set` + deploy). OAuth callback URIs stay on fly.dev —
+unaffected.
+
+Original API steps (for re-runs):
 
 ```bash
-CF_TOKEN=...   # account token with Pages:Edit
+CF_TOKEN=...   # account token with Pages:Edit (***REMOVED-KEYCHAIN-PATH***)
 CF_ACCT=***REMOVED-CF-ACCT***...
 
 # 1. attach the domain to the Pages project (CF validates + provisions
