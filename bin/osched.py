@@ -38,6 +38,7 @@ from osched.pool import import_source
 from osched import probe as probe_mod
 from osched import matching
 from osched import classify as classify_mod
+from osched import scheduler as sched_mod
 
 PROJECT_YAML_TEMPLATE = """\
 # Project config for {domain} — lives under data_root/projects/ (gitignored).
@@ -249,6 +250,27 @@ def cmd_dr(cfg: dict, limit: int) -> int:
     return 0
 
 
+def cmd_schedule(cfg: dict, domain: str, days: int) -> int:
+    conn = connect(data_root(cfg))
+    project = _get_project(cfg, conn, domain)
+    stats = sched_mod.generate_plan(conn, project, days=days)
+    print(f"schedule[{domain}]: " + json.dumps(stats, ensure_ascii=False))
+    return 0
+
+
+def cmd_plan(cfg: dict, domain: str) -> int:
+    conn = connect(data_root(cfg))
+    project = _get_project(cfg, conn, domain)
+    rows = sched_mod.due_today(conn, project["_id"])
+    print(f"plan[{domain}] (queued, due): {len(rows)}")
+    for r in rows:
+        note = json.loads(r["result_note"] or "{}")
+        print(f"  plan_id={r['id']:<5} {r['scheduled_date']} "
+              f"{r['channel']:<6} {r['pool_domain']:<28} "
+              f"landing={note.get('landing', '')}")
+    return 0
+
+
 def cmd_stats(cfg: dict) -> int:
     conn = connect(data_root(cfg))
     rows = conn.execute(
@@ -312,6 +334,11 @@ def main(argv: list[str] | None = None) -> int:
     p_cls.add_argument("--limit", type=int, default=0)
     p_dr = sub.add_parser("dr", help="DR enrichment via Open PageRank")
     p_dr.add_argument("--limit", type=int, default=100)
+    p_sch = sub.add_parser("schedule", help="fill future dates from confirmed matches")
+    p_sch.add_argument("domain")
+    p_sch.add_argument("--days", type=int, default=7)
+    p_plan = sub.add_parser("plan", help="show queued plans due for execution")
+    p_plan.add_argument("domain")
     sub.add_parser("stats", help="pool summary")
     args = ap.parse_args(argv)
 
@@ -335,6 +362,10 @@ def main(argv: list[str] | None = None) -> int:
         return cmd_classify(cfg, args.limit)
     if args.cmd == "dr":
         return cmd_dr(cfg, args.limit)
+    if args.cmd == "schedule":
+        return cmd_schedule(cfg, args.domain, args.days)
+    if args.cmd == "plan":
+        return cmd_plan(cfg, args.domain)
     if args.cmd == "stats":
         return cmd_stats(cfg)
     return 2
