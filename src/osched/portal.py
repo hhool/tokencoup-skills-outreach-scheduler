@@ -44,6 +44,8 @@ CREATE TABLE IF NOT EXISTS client (
   email         TEXT NOT NULL UNIQUE,
   password_hash TEXT NOT NULL,          -- scrypt$salt_hex$hash_hex
   verified      INTEGER NOT NULL DEFAULT 0,
+  role          TEXT NOT NULL DEFAULT 'client',
+                -- client | admin (admin = whitelisted super user)
   oauth_provider TEXT,                  -- google | facebook | NULL (stub phase)
   oauth_sub     TEXT,
   verify_token  TEXT,
@@ -75,7 +77,40 @@ CREATE TABLE IF NOT EXISTS project_request (
   created_at    TEXT NOT NULL DEFAULT (datetime('now')),
   UNIQUE(client_id, domain)
 );
+
+CREATE TABLE IF NOT EXISTS admin_whitelist (
+  email    TEXT PRIMARY KEY,
+  note     TEXT,
+  added_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
 """
+
+def _migrate_portal(conn: sqlite3.Connection) -> None:
+    """Additive portal migrations (idempotent)."""
+    cols = {r["name"] for r in conn.execute(
+        "PRAGMA table_info(client)").fetchall()}
+    if "role" not in cols:
+        conn.execute("ALTER TABLE client ADD COLUMN role TEXT "
+                     "NOT NULL DEFAULT 'client'")
+
+
+def seed_admin_whitelist(conn: sqlite3.Connection, cfg: dict) -> None:
+    """Whitelist sources: config portal.admin_emails + env override.
+
+    Whitelisted emails are privileges, not registration gates: anyone
+    can register, but only whitelist members carry role='admin'.
+    """
+    emails = set(cfg.get("portal", {}).get("admin_emails") or [])
+    env_val = os.environ.get("PORTAL_ADMIN_EMAILS", "")
+    emails |= {e.strip().lower() for e in env_val.split(",") if e.strip()}
+    for email in emails:
+        conn.execute("INSERT OR IGNORE INTO admin_whitelist(email, note) "
+                     "VALUES(?, 'seeded')", (email,))
+    conn.execute("""UPDATE client SET role='admin' WHERE email IN
+                    (SELECT email FROM admin_whitelist)""")
+    conn.execute("""UPDATE client SET role='client' WHERE role='admin'
+                    AND email NOT IN (SELECT email FROM admin_whitelist)""")
+    conn.commit()
 
 PAGE = """<!DOCTYPE html>
 <html lang="en"><head><meta charset="utf-8">
@@ -567,6 +602,8 @@ class PortalHandler(BaseHTTPRequestHandler):
             self._page_reports()
         elif path == "/new":
             self._page_new()
+        elif path == "/admin":
+            self._page_admin()
         elif path == "/logout":
             tok = self._cookie("osched_session")
             if tok:
@@ -646,6 +683,8 @@ class PortalHandler(BaseHTTPRequestHandler):
             self._post_new()
         elif path == "/verify-domain":
             self._post_verify_domain()
+        elif path == "/admin":
+            self._post_admin()
         else:
             self._html("<h1>Not found</h1>", title="404")
 
@@ -667,9 +706,11 @@ class PortalHandler(BaseHTTPRequestHandler):
         exp = (datetime.utcnow() + timedelta(hours=VERIFY_HOURS)).isoformat()
         self.conn.execute(
             """INSERT INTO client(email, password_hash, verified,
-               verify_token, verify_expires)
-               VALUES(?,?,0,?,?)""",
-            (email, hash_password(password), token, exp))
+               verify_token, verify_expires, role)
+               VALUES(?,?,0,?,?,
+                 CASE WHEN ? IN (SELECT email FROM admin_whitelist)
+                   THEN 'admin' ELSE 'client' END)""",
+            (email, hash_password(password), token, exp, email))
         self.conn.commit()
         link = f"{self._base_url()}/verify?token={token}"
         dev = os.environ.get("PORTAL_DEV") == "1" or \
@@ -762,11 +803,14 @@ class PortalHandler(BaseHTTPRequestHandler):
         self._html(body, title="new project",
                    nav=self._nav_links())
 
-    @staticmethod
-    def _nav_links() -> str:
+    def _nav_links(self) -> str:
+        c = self._require_client()
+        admin = ("<a href='/admin' style='color:inherit'>admin</a> "
+                 if c is not None and c["role"] == "admin" else "")
         return ("<a href='/dashboard' style='color:inherit'>dashboard</a> "
                 "<a href='/reports' style='color:inherit'>reports</a> "
                 "<a href='/new' style='color:inherit'>new project</a> "
+                + admin +
                 "<form method='post' action='/logout' style='display:inline'>"
                 "<button style='padding:2px 8px'>Log out</button></form>")
 
@@ -843,6 +887,165 @@ class PortalHandler(BaseHTTPRequestHandler):
                 "(trial already used on this account).")
         self._page_new(notice=note)
 
+    # -- super admin (whitelist privileges) --------------------------------
+
+    def _page_admin(self, notice: str = ""):
+        client = self._require_client()
+        if not client or client["role"] != "admin":
+            self._html("<h1>Forbidden</h1>"
+                       "<p class='muted'>Whitelisted admins only.</p>",
+                       title="403")
+            return
+        notice_html = f"<p class='warn'>{_esc(notice)}</p>" if notice else ""
+        drafts = self.conn.execute(
+            """SELECT r.*, c.email FROM project_request r
+               JOIN client c ON c.id=r.client_id
+               WHERE r.verify_state IN ('draft','verified')
+               ORDER BY r.created_at""").fetchall()
+        draft_rows = ""
+        for r in drafts:
+            draft_rows += (f"<tr><td>{_esc(r['email'])}</td>"
+                           f"<td>{_esc(r['domain'])}</td>"
+                           f"<td>{_esc(r['verify_state'])}</td>"
+                           f"<td><form method='post' action='/admin'>"
+                           f"<input type='hidden' name='action' value='approve'>"
+                           f"<input type='hidden' name='id' value='{r['id']}'>"
+                           f"<button style='padding:2px 8px'>Approve</button>"
+                           f"</form></td></tr>")
+        if not draft_rows:
+            draft_rows = ("<tr><td colspan='4' class='muted'>no pending "
+                          "requests</td></tr>")
+        actives = self.conn.execute(
+            """SELECT r.*, c.email FROM project_request r
+               JOIN client c ON c.id=r.client_id
+               WHERE r.verify_state='active' ORDER BY r.domain""").fetchall()
+        active_rows = ""
+        for r in actives:
+            active_rows += (
+                f"<tr><td>{_esc(r['domain'])}</td><td>{_esc(r['email'])}</td>"
+                f"<td>{_esc(r['quota_type'])}</td>"
+                f"<td>{r['quota_used']} / {r['quota_total']}</td>"
+                f"<td><form method='post' action='/admin' "
+                f"style='display:flex;gap:4px'>"
+                f"<input type='hidden' name='action' value='quota'>"
+                f"<input type='hidden' name='id' value='{r['id']}'>"
+                f"<input name='quota_total' value='{r['quota_total']}' "
+                f"style='width:60px'>"
+                f"<button style='padding:2px 8px'>Set</button></form>"
+                f"</td></tr>")
+        if not active_rows:
+            active_rows = ("<tr><td colspan='5' class='muted'>no active "
+                           "projects</td></tr>")
+        clients = self.conn.execute(
+            """SELECT c.*, (SELECT COUNT(*) FROM project_request r
+                WHERE r.client_id=c.id AND r.verify_state='active') AS npr
+               FROM client c ORDER BY c.email""").fetchall()
+        wl = {r["email"] for r in self.conn.execute(
+            "SELECT email FROM admin_whitelist")}
+        client_rows = ""
+        for c in clients:
+            in_wl = c["email"] in wl
+            client_rows += (
+                f"<tr><td>{_esc(c['email'])}</td><td>{_esc(c['role'])}</td>"
+                f"<td>{c['npr']}</td><td>"
+                f"<form method='post' action='/admin'>"
+                f"<input type='hidden' name='action' value='whitelist'>"
+                f"<input type='hidden' name='email' value='{_esc(c['email'])}'>"
+                f"<button style='padding:2px 8px'>"
+                f"{'Remove' if in_wl else 'Whitelist'}</button>"
+                f"</form></td></tr>")
+        wl_rows = "".join(f"<code>{_esc(r['email'])}</code> "
+                          for r in self.conn.execute(
+                              "SELECT email FROM admin_whitelist ORDER BY email"))
+        body = f"""
+        <h1>Super admin</h1>{notice_html}
+        <div class='card'><h2>Whitelist</h2>
+        <p>{wl_rows or '<span class=muted>empty</span>'}</p>
+        <p class='muted'>Whitelisted emails get role=admin at registration
+        or next login. Sources: config portal.admin_emails + env, plus
+        manual entries below. Anyone can still register; the whitelist is
+        a privilege gate, not a registration gate.</p>
+        <form method='post' action='/admin' style='display:flex;gap:6px'>
+          <input type='hidden' name='action' value='whitelist'>
+          <input name='email' placeholder='email to whitelist'>
+          <button style='padding:4px 10px'>Add</button>
+        </form></div>
+        <div class='card'><h2>Pending project requests</h2>
+        <table><tr><th>client</th><th>domain</th><th>state</th><th></th></tr>
+        {draft_rows}</table>
+        <p class='muted'>Approve = activate without meta verification
+        (manual override for trusted cases). Delivery gates unchanged:
+        match/confirm stay scheduler-owned.</p></div>
+        <div class='card'><h2>Active projects &amp; quotas</h2>
+        <table><tr><th>project</th><th>client</th><th>type</th>
+        <th>used / total</th><th>set total</th></tr>
+        {active_rows}</table></div>
+        <div class='card'><h2>Clients</h2>
+        <table><tr><th>email</th><th>role</th><th>projects</th><th></th></tr>
+        {client_rows}</table></div>"""
+        self._html(body, title="admin", nav=self._nav_links())
+
+    def _post_admin(self):
+        client = self._require_client()
+        if not client or client["role"] != "admin":
+            self._page_admin(notice="Forbidden.")
+            return
+        f = self._form()
+        action = f.get("action")
+        if action == "approve":
+            req = self.conn.execute(
+                "SELECT * FROM project_request WHERE id=? AND "
+                "verify_state IN ('draft','verified')",
+                (f.get("id") or "",)).fetchone()
+            if req:
+                result = activate_request(self.conn, req)
+                self._page_admin(notice=f"{_esc(req['domain'])} approved "
+                                        f"({result['credits']} trial "
+                                        f"credits).")
+            else:
+                self._page_admin(notice="Request not found.")
+        elif action == "quota":
+            try:
+                total = max(0, int(f.get("quota_total") or 0))
+            except ValueError:
+                total = 0
+            self.conn.execute(
+                "UPDATE project_request SET quota_total=? WHERE id=? AND "
+                "verify_state='active'", (total, f.get("id") or ""))
+            self.conn.commit()
+            self._page_admin(notice="Quota updated.")
+        elif action == "whitelist":
+            email = (f.get("email") or "").strip().lower()
+            if not email:
+                self._page_admin(notice="Empty email.")
+                return
+            wl_now = {r["email"] for r in self.conn.execute(
+                "SELECT email FROM admin_whitelist")}
+            if email in wl_now:
+                if len(wl_now) == 1:
+                    self._page_admin(notice="Cannot remove the last "
+                                            "whitelisted admin — add "
+                                            "another one first.")
+                    return
+                self.conn.execute("DELETE FROM admin_whitelist WHERE email=?",
+                                  (email,))
+                self.conn.execute(
+                    "UPDATE client SET role='client' WHERE email=?", (email,))
+                self.conn.commit()
+                self._page_admin(notice=f"{_esc(email)} removed from "
+                                        f"whitelist.")
+            else:
+                self.conn.execute(
+                    "INSERT OR IGNORE INTO admin_whitelist(email, note) "
+                    "VALUES(?, 'added by admin')", (email,))
+                self.conn.execute(
+                    "UPDATE client SET role='admin' WHERE email=?", (email,))
+                self.conn.commit()
+                self._page_admin(notice=f"{_esc(email)} whitelisted "
+                                        f"(admin).")
+        else:
+            self._page_admin(notice="Unknown action.")
+
 
 # --------------------------------------------------------------------------
 # entry
@@ -853,6 +1056,8 @@ def serve(cfg: dict, data_root: pathlib.Path, host: str, port: int) -> int:
     # in one thread sidesteps sqlite cross-thread restrictions entirely
     conn = db_connect(data_root)
     conn.executescript(PORTAL_SCHEMA)
+    _migrate_portal(conn)
+    seed_admin_whitelist(conn, cfg)
     conn.commit()
     PortalHandler.conn = conn
     PortalHandler.cfg = cfg
