@@ -173,8 +173,9 @@ process and the cron process are separate, sqlite WAL mode allows both.
    the report SMTP machinery), scrypt passwords, HttpOnly session
    cookies, read-only View A/B v0 dashboard; Google/Facebook buttons
    stubbed (Google first when the callback domain is bound).
-2. View A/B v1 from the §4 contract (DR bands, funnel trend, report
-   archive page).
+2. ~~View A/B v1~~ **shipped 2026-11-18**: monthly quota window,
+   capacity gauge, DR buckets, source mix, weekly funnel, report
+   archive page (`/reports`, reuses B2 machinery without mail).
 3. Self-service project creation + ownership verification + trial
    credits (§1.5).
 4. Tier 4 downstream traffic — after UTM convention agreed with served
