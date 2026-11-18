@@ -37,6 +37,7 @@ from osched.db import connect
 from osched.pool import import_source
 from osched import probe as probe_mod
 from osched import matching
+from osched import classify as classify_mod
 
 PROJECT_YAML_TEMPLATE = """\
 # Project config for {domain} — lives under data_root/projects/ (gitignored).
@@ -234,6 +235,20 @@ def cmd_reject(cfg: dict, domain: str, ids: list[int]) -> int:
     return 0
 
 
+def cmd_classify(cfg: dict, limit: int) -> int:
+    conn = connect(data_root(cfg))
+    stats = classify_mod.run_classify(conn, limit=limit)
+    print("classify: " + json.dumps(stats, ensure_ascii=False))
+    return 0
+
+
+def cmd_dr(cfg: dict, limit: int) -> int:
+    conn = connect(data_root(cfg))
+    stats = classify_mod.refresh_dr(conn, cfg, limit=limit)
+    print("dr: " + json.dumps(stats, ensure_ascii=False))
+    return 0
+
+
 def cmd_stats(cfg: dict) -> int:
     conn = connect(data_root(cfg))
     rows = conn.execute(
@@ -293,6 +308,10 @@ def main(argv: list[str] | None = None) -> int:
     p_rej = sub.add_parser("reject", help="reject pending matches")
     p_rej.add_argument("domain")
     p_rej.add_argument("--ids", default="")
+    p_cls = sub.add_parser("classify", help="auto-classify probed rows (§4)")
+    p_cls.add_argument("--limit", type=int, default=0)
+    p_dr = sub.add_parser("dr", help="DR enrichment via Open PageRank")
+    p_dr.add_argument("--limit", type=int, default=100)
     sub.add_parser("stats", help="pool summary")
     args = ap.parse_args(argv)
 
@@ -312,6 +331,10 @@ def main(argv: list[str] | None = None) -> int:
         return cmd_confirm(cfg, args.domain, _ids_arg(args.ids), args.top)
     if args.cmd == "reject":
         return cmd_reject(cfg, args.domain, _ids_arg(args.ids))
+    if args.cmd == "classify":
+        return cmd_classify(cfg, args.limit)
+    if args.cmd == "dr":
+        return cmd_dr(cfg, args.limit)
     if args.cmd == "stats":
         return cmd_stats(cfg)
     return 2
