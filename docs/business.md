@@ -108,7 +108,7 @@ role. Splitting into two mailboxes later is config-only.
   Every commercial-layer feature traces back to "more real links, proven
   to the client".
 - **Operations mode**: backend runs on fly.io (HTTP-side pipeline, cron,
-  sqlite volume) — fully agent-free (no WorkBuddy dependency anywhere).
+  sqlite volume) — fully agent-free (no assistant-platform dependency).
   CUA (real-Chrome captcha) stays on the desktop for the current sites and
   is acceptable in early commercial stage; later replace with an
   open-source or commercial captcha solution (single touch point: §7.1

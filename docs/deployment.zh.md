@@ -38,11 +38,10 @@ fly ssh sftp shell -C "mkdir -p /data/config"
 cat config/global.yaml | fly ssh sftp shell -C "cat > /data/config/global.yaml"
 
 # 密钥——os.environ 优先于 env 文件（require_env_key 顺序）
-fly secrets set \
-  SMTP_HOST=smtp.gmail.com SMTP_PORT=465 \
-  SMTP_USER='...' SMTP_APP_PASSWORD='...' \
-  IMAP_HOST=imap.gmail.com IMAP_PORT=993 \
-  OPENPAGERANK_API_KEY='...'        # 可选；注意 IP 绑定
+# 键集合与 config/secrets/smtp.env.example 相同（SMTP 主机/端口/用户、
+# Gmail 应用密码键、IMAP 主机/端口、可选 OPR key），用 `fly secrets`
+# 设置；Gmail 应用密码的值来自 Google 账号的应用密码页，绝不来自仓库
+# 任何文件。
 
 # 验证
 fly ssh console -C "ls /data && scripts/daily.sh run"
@@ -57,8 +56,8 @@ fly ssh console -C "ls /data && scripts/daily.sh run"
 
 ## 脱离智能体运行（2026-11-18 拍板）
 
-全系统 = CLI + cron + sqlite，任何环节都不依赖 WorkBuddy：无 MCP、
-无 .workbuddy 路径、无会话状态。凡能按 cron 跑
+全系统 = CLI + cron + sqlite，任何环节都无智能体平台依赖：无 MCP、
+无平台路径、无会话状态。凡能按 cron 跑
 `python3 bin/osched.py …` 的环境即是完整部署。
 
 ## AI 层挂接点（后期，方向已拍板）

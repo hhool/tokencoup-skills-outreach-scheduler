@@ -43,11 +43,10 @@ fly ssh sftp shell -C "mkdir -p /data/config"
 cat config/global.yaml | fly ssh sftp shell -C "cat > /data/config/global.yaml"
 
 # secrets — os.environ wins over env files (require_env_key order)
-fly secrets set \
-  SMTP_HOST=smtp.gmail.com SMTP_PORT=465 \
-  SMTP_USER='...' SMTP_APP_PASSWORD='...' \
-  IMAP_HOST=imap.gmail.com IMAP_PORT=993 \
-  OPENPAGERANK_API_KEY='...'        # optional; note IP binding below
+# set the same key set as config/secrets/smtp.env.example (SMTP host/
+# port/user, the Gmail app-password key, IMAP host/port, optional OPR
+# key) via `fly secrets` — the Gmail app-password value comes from the
+# Google account app-passwords page, never from any repo file.
 
 # verify
 fly ssh console -C "ls /data && scripts/daily.sh run"
@@ -64,9 +63,10 @@ Notes:
 
 ## Agent-free operation (ratified 2026-11-18)
 
-The whole system is CLI + cron + sqlite. No WorkBuddy dependency anywhere:
-no MCP, no .workbuddy paths, no agent session state. Anything that can run
-`python3 bin/osched.py …` on a cron schedule is a complete deployment.
+The whole system is CLI + cron + sqlite. Zero assistant-platform
+dependency: no MCP, no session state, no platform-owned paths. Anything
+that can run `python3 bin/osched.py …` on a cron schedule is a complete
+deployment.
 
 ## AI layer hook points (later phase, ratified direction)
 
