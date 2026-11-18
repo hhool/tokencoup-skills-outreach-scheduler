@@ -108,7 +108,8 @@ role. Splitting into two mailboxes later is config-only.
 | functional layer (import→report, cron, CUA) | shipped, pushed |
 | **B1 live-link ledger** (`verify` CLI, `link_verify` table, plan state `live`, in daily.sh run) | **shipped** |
 | **B2 client report** (`client-report` CLI, `client_report.py`, per-project `report.email`) | **shipped** — real send verified |
-| **B3 account lifecycle (phase 1: ledger + mail-verify)** (`account` table, `account add/list`, `mail-verify` IMAP fetch, in daily.sh run) | **shipped** — real Gmail inbox scanned, activation links extracted; activation-click (CUA) is the next slice |
+| **B3 account lifecycle (phases 1-2: ledger + mail-verify + CUA activation click)** | **shipped** — real inbox verified, pending -> active end-to-end; phase 3 candidates: registration automation, aged-account reuse |
+| **B4 submittability profile** (`profile` CLI, `profile.py`) | **shipped** — failure-mix classification, per-domain recommendation (preferred/keep/bot-blocked/exclude); template attribution fills as wave2 data accumulates |
 | OPR DR enrichment | pending IP binding decision (VPN exit, on hold) |
 | wave2 SMTP live send | ready; awaiting first wave2 plan |
 | real-site full run | pending queue has v3/v2 captcha candidates |

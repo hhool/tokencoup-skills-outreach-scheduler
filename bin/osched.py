@@ -45,6 +45,7 @@ from osched import scheduler as sched_mod
 from osched import executor as exec_mod
 from osched import client_report as client_report_mod
 from osched import accounts as accounts_mod
+from osched import profile as profile_mod
 from osched import report as report_mod
 from osched import cua as cua_mod
 from osched import verify as verify_mod
@@ -416,6 +417,15 @@ def cmd_verify(cfg: dict, domain: str | None, days: int, limit: int) -> int:
     return 0
 
 
+def cmd_profile(cfg: dict, domain: str | None, limit: int) -> int:
+    conn = connect(data_root(cfg))
+    pid = None
+    if domain:
+        pid = _get_project(cfg, conn, domain)["_id"]
+    print(profile_mod.render(conn, pid, limit))
+    return 0
+
+
 def cmd_stats(cfg: dict) -> int:
     conn = connect(data_root(cfg))
     rows = conn.execute(
@@ -541,6 +551,12 @@ def main(argv: list[str] | None = None) -> int:
     p_aact.add_argument("domain")
     p_aact.add_argument("--headless", action="store_true")
     p_aact.add_argument("--limit", type=int, default=0)
+    p_prof = sub.add_parser("profile",
+                            help="per-domain submittability profile (B4)")
+    p_prof.add_argument("--domain", default=None,
+                        help="limit to one project")
+    p_prof.add_argument("--limit", type=int, default=0,
+                        help="show top N domains")
     sub.add_parser("stats", help="pool summary")
     args = ap.parse_args(argv)
 
@@ -589,6 +605,8 @@ def main(argv: list[str] | None = None) -> int:
     if args.cmd == "account-activate":
         return cmd_account_activate(cfg, args.domain, args.headless,
                                     args.limit)
+    if args.cmd == "profile":
+        return cmd_profile(cfg, args.domain, args.limit)
     if args.cmd == "stats":
         return cmd_stats(cfg)
     return 2
