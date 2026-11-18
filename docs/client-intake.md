@@ -110,3 +110,17 @@ single human gate at ④, ⑧ is human strategy on system data.
 3. **Client A phase-2** needs no schema change: it is just new entries in the
    `page` asset. Matching treats them as higher-priority landing URLs (fresh
    entries get a recency boost in scoring — to be confirmed in Phase 3).
+4. **Client mailbox roles** (ratified from real usage): a client mailbox
+   carries two distinct business roles —
+   - **registration role**: brand identity for directory/form submissions
+     (lands in the `contact-email` asset, used by wave1 forms and CUA fills,
+     and as wave2 sender identity);
+   - **summary role**: recipient of periodic data digests (client report /
+     daily report, `report.email`).
+   One mailbox may serve both roles at once (current azgames practice:
+   one Gmail does registrations *and* receives the digests). The config
+   model already supports this — the same address can appear in
+   `contact-email` and `report.email`; splitting into two mailboxes later
+   is a config-only change, no schema impact. Client mailboxes are user
+   data: credentials live in gitignored env files, addresses never in the
+   repo.

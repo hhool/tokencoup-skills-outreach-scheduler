@@ -35,6 +35,7 @@ from email.utils import formataddr, formatdate, make_msgid
 from . import probe as probe_mod
 from .config import ConfigError, require_env_key
 from .matching import landing_url
+from .report import _require_any
 from .scheduler import due_today
 
 # Captcha tiers (§7.1): what the HTTP executor may do itself.
@@ -234,11 +235,13 @@ def exec_form(conn, cfg: dict, project: dict, row, ctx: dict,
 def _sender_identity(cfg: dict, project: dict) -> dict:
     """Per-project sender block, else the shared ops mailbox (§7)."""
     ident = dict(project.get("sender") or {})
+    smtp_cfg = cfg.get("smtp", {})
     if not ident.get("host"):
-        ident["host"] = cfg.get("smtp", {}).get("host", "")
-        ident["port"] = cfg.get("smtp", {}).get("port", 587)
-        ident["env_file"] = cfg.get("smtp", {}).get("env_file",
-                                                    "config/secrets/smtp.env")
+        ident["host"] = smtp_cfg.get("host", "")
+        ident["port"] = smtp_cfg.get("port", 587)
+    if not ident.get("env_file"):
+        ident["env_file"] = smtp_cfg.get(
+            "env_file", "config/secrets/smtp.env")
     return ident
 
 
@@ -259,7 +262,9 @@ def exec_email(conn, cfg: dict, project: dict, row, ctx: dict,
         return {"state": "human", "note": "empty template"}
     subject, _, content = body.partition("\n")
     sender_user = require_env_key(ident.get("env_file"), "SMTP_USER")
-    sender_pass = require_env_key(ident.get("env_file"), "SMTP_PASS")
+    # Gmail app-password convention, same env file as the daily report.
+    sender_pass = _require_any(ident.get("env_file"),
+                               "SMTP_APP_PASSWORD", "SMTP_PASS")
     from_addr = ident.get("from") or sender_user
 
     if dry_run:
@@ -277,9 +282,14 @@ def exec_email(conn, cfg: dict, project: dict, row, ctx: dict,
                                    .split("/")[0])
 
     try:
-        with smtplib.SMTP(ident["host"], int(ident.get("port", 587)),
-                          timeout=30) as smtp:
-            smtp.starttls()
+        port = int(ident.get("port", 587))
+        if port == 465:
+            smtp = smtplib.SMTP_SSL(ident["host"], port, timeout=30)
+        else:
+            smtp = smtplib.SMTP(ident["host"], port, timeout=30)
+        with smtp:
+            if port != 465:
+                smtp.starttls()
             smtp.login(sender_user, sender_pass)
             smtp.sendmail(from_addr, [recipient], msg.as_string())
         return {"state": "sent", "note": f"sent to {recipient}"}
