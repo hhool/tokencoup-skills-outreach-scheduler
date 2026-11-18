@@ -209,10 +209,12 @@ wrangler pages deploy frontend --project-name osched-portal --branch main
 
 ### 线上端点（2026-11-18）
 
-- 品牌/生产域名：**LinkAttest** → `linkattest.com`（2026-11-18 定稿，
-  购买待办——见下方绑定步骤；绑定前 pages.dev 即线上前端）
-- 前端：https://osched-portal.pages.dev（Cloudflare Pages，项目
-  `osched-portal`，账号 ***REMOVED-CF-ACCT***…）
+- 品牌/生产域名：**LinkAttest** → `linkattest.com`（2026-11-18 注册，
+  CF zone 22:24 active、Pages 证书 22:29 签发——**已上线**：
+  apex / www / `/app/` 全部 200）
+- 前端：https://linkattest.com（Cloudflare Pages，项目 `osched-portal`，
+  账号 ***REMOVED-CF-ACCT***…）；`***REMOVED-REVOKED-DOMAIN***` 保留为试用/副面，直到决定
+  是否做 canonical 跳转
 - 后端 API：https://tokencoup-skills-outreach-scheduler.fly.dev/api/*
   （fly 专用入口 v4 ***REMOVED-FLY-IPV4*** / v6 ***REMOVED-FLY-IPV6***；
   这两个固定 IP 同时是 OPR key 改绑目标）

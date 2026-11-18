@@ -347,10 +347,11 @@ same machine via <code>scripts/start.sh</code> (port 8080, <code>[http_service]<
 <h3>Live endpoints (2026-11-18)</h3>
 <ul>
 <li>brand / production domain: <strong>LinkAttest</strong> → <code>linkattest.com</code>
-  (registered 2026-11-18, Namecheap; CF zone + Pages domain + DNS
-  records in place — awaiting the NS switch, see binding steps below)</li>
-<li>frontend: https://osched-portal.pages.dev (Cloudflare Pages,
-  project <code>osched-portal</code>, account ***REMOVED-CF-ACCT***…)</li>
+  (registered 2026-11-18, Namecheap; CF zone active 22:24, Pages cert
+  issued 22:29 — <strong>live</strong>: apex / www / <code>/app/</code> all 200)</li>
+<li>frontend: https://linkattest.com (Cloudflare Pages, project
+  <code>osched-portal</code>, account ***REMOVED-CF-ACCT***…); <code>***REMOVED-REVOKED-DOMAIN***</code> stays live as
+  the trial/secondary face until a canonical redirect decision is made</li>
 <li>backend API: https://tokencoup-skills-outreach-scheduler.fly.dev/api/*
   (fly dedicated ingress v4 ***REMOVED-FLY-IPV4*** / v6 ***REMOVED-FLY-IPV6***;
   these fixed IPs are also the OPR key rebinding target)</li>
@@ -667,10 +668,12 @@ wrangler pages deploy frontend --project-name osched-portal --branch main
 （8080 端口，<code>[http_service]</code>）。</p>
 <h3>线上端点（2026-11-18）</h3>
 <ul>
-<li>品牌/生产域名：<strong>LinkAttest</strong> → <code>linkattest.com</code>（2026-11-18 定稿，
-  购买待办——见下方绑定步骤；绑定前 pages.dev 即线上前端）</li>
-<li>前端：https://osched-portal.pages.dev（Cloudflare Pages，项目
-  <code>osched-portal</code>，账号 ***REMOVED-CF-ACCT***…）</li>
+<li>品牌/生产域名：<strong>LinkAttest</strong> → <code>linkattest.com</code>（2026-11-18 注册，
+  CF zone 22:24 active、Pages 证书 22:29 签发——<strong>已上线</strong>：
+  apex / www / <code>/app/</code> 全部 200）</li>
+<li>前端：https://linkattest.com（Cloudflare Pages，项目 <code>osched-portal</code>，
+  账号 ***REMOVED-CF-ACCT***…）；<code>***REMOVED-REVOKED-DOMAIN***</code> 保留为试用/副面，直到决定
+  是否做 canonical 跳转</li>
 <li>后端 API：https://tokencoup-skills-outreach-scheduler.fly.dev/api/*
   （fly 专用入口 v4 ***REMOVED-FLY-IPV4*** / v6 ***REMOVED-FLY-IPV6***；
   这两个固定 IP 同时是 OPR key 改绑目标）</li>
