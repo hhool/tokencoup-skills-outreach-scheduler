@@ -592,6 +592,9 @@ class PortalHandler(BaseHTTPRequestHandler):
 
     def do_GET(self):
         path = urlparse(self.path).path
+        if path.startswith("/api/"):
+            self._api_dispatch("GET", path)
+            return
         if path == "/":
             self._page_home()
         elif path == "/verify":
@@ -675,6 +678,9 @@ class PortalHandler(BaseHTTPRequestHandler):
 
     def do_POST(self):
         path = urlparse(self.path).path
+        if path.startswith("/api/"):
+            self._api_dispatch("POST", path)
+            return
         if path == "/register":
             self._post_register()
         elif path == "/login":
@@ -819,73 +825,249 @@ class PortalHandler(BaseHTTPRequestHandler):
         if not client:
             self._redirect("/")
             return
-        f = self._form()
-        domain = normalize_domain(f.get("domain"))
-        dev = os.environ.get("PORTAL_DEV") == "1"
-        err = validate_domain(domain, dev=dev)
-        if err:
-            self._page_new(notice=err)
-            return
-        if _domain_claimed(self.conn, domain, client["id"]):
-            self._page_new(notice="This domain is already claimed by "
-                                  "another account.")
-            return
-        dup = self.conn.execute(
-            "SELECT 1 FROM project_request WHERE client_id=? AND domain=?",
-            (client["id"], domain)).fetchone()
-        if dup:
-            self._page_new(notice="You already have a request for this "
-                                  "domain.")
-            return
-        tags = [t.strip() for t in (f.get("tags") or "").split(",")
-                if t.strip()]
-        token = "osched-" + secrets.token_urlsafe(16)
-        self.conn.execute(
-            """INSERT INTO project_request(client_id, domain, site_title,
-               site_summary, contact_email, tags_json, verify_method,
-               verify_token, verify_state)
-               VALUES(?,?,?,?,?,?, 'meta', ?, 'draft')""",
-            (client["id"], domain, (f.get("site_title") or "").strip(),
-             (f.get("site_summary") or "").strip(),
-             (f.get("contact_email") or "").strip(),
-             json.dumps(tags), token))
-        self.conn.commit()
-        self._page_new()
+        ok, msg = create_request(self.conn, client, self._form())
+        self._page_new(notice=None if ok else msg)
 
     def _post_verify_domain(self):
         client = self._require_client()
         if not client:
             self._redirect("/")
             return
-        rid = (self._form().get("id") or "")
-        req = self.conn.execute(
-            """SELECT * FROM project_request WHERE id=? AND client_id=?
-               AND verify_state='draft'""",
-            (rid, client["id"])).fetchone()
-        if not req:
-            self._page_new(notice="No pending request found.")
+        ok, msg = verify_and_activate(self.conn, client["id"],
+                                      self._form().get("id") or "")
+        self._page_new(notice=None if ok else msg)
+
+    def do_OPTIONS(self):  # CORS preflight for the Cloudflare Pages origin
+        self.send_response(204)
+        self.send_header("Access-Control-Allow-Origin", "*")
+        self.send_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
+        self.send_header("Access-Control-Allow-Headers",
+                         "Content-Type, X-Auth-Token")
+        self.send_header("Access-Control-Max-Age", "86400")
+        self.end_headers()
+
+    # -- JSON API (Cloudflare Pages frontend consumes these) ---------------
+
+    def _api_headers(self):
+        self.send_response(200)
+        self.send_header("Content-Type", "application/json; charset=utf-8")
+        self.send_header("Access-Control-Allow-Origin", "*")
+        self.send_header("Access-Control-Allow-Headers",
+                         "Content-Type, X-Auth-Token")
+
+    def _api_send(self, payload: dict, status: int = 200) -> None:
+        data = json.dumps(payload, ensure_ascii=False).encode()
+        self.send_response(status)
+        self.send_header("Content-Type", "application/json; charset=utf-8")
+        self.send_header("Content-Length", str(len(data)))
+        self.send_header("Access-Control-Allow-Origin", "*")
+        self.send_header("Access-Control-Allow-Headers",
+                         "Content-Type, X-Auth-Token")
+        self.end_headers()
+        self.wfile.write(data)
+
+    def _api_auth(self):
+        token = self.headers.get("X-Auth-Token") or \
+            self._cookie("osched_session")
+        return _client_from_session(self.conn, token)
+
+    def _api_dispatch(self, method: str, path: str):
+        try:
+            if method == "GET":
+                routes = {
+                    "/api/dashboard": self._api_dashboard,
+                    "/api/reports": self._api_reports,
+                    "/api/requests": self._api_requests,
+                    "/api/admin": self._api_admin,
+                }
+            else:
+                routes = {
+                    "/api/register": self._api_register,
+                    "/api/login": self._api_login,
+                    "/api/logout": self._api_logout,
+                    "/api/new": self._api_new,
+                    "/api/verify-domain": self._api_verify_domain,
+                    "/api/admin": self._api_admin_post,
+                }
+            fn = routes.get(path)
+            if fn:
+                fn()
+            else:
+                self._api_send({"error": "not found"}, 404)
+        except Exception as e:  # noqa: BLE001 — JSON error, never crash
+            self._api_send({"error": str(e)[:200]}, 500)
+
+    def _api_dashboard(self):
+        client = self._api_auth()
+        if not client:
+            self._api_send({"error": "unauthorized"}, 401)
             return
-        if _domain_claimed(self.conn, req["domain"], client["id"]):
-            self._page_new(notice="This domain was claimed by another "
-                                  "account in the meantime.")
+        projects = [dict(r) for r in _client_projects(self.conn, client["id"])]
+        day = datetime.utcnow().date().isoformat()
+        payload = {
+            "email": client["email"], "role": client["role"],
+            "projects": projects,
+            "capacity": [dict(r) for r in
+                         _capacity_rows(self.conn, client["id"], day)],
+            "ledger": [dict(r) for r in
+                       _live_ledger(self.conn, client["id"])],
+            "dr_buckets": _dr_buckets(self.conn, client["id"]),
+            "source_mix": [dict(r) for r in
+                           _source_mix(self.conn, client["id"])],
+            "funnel": _funnel(self.conn, client["id"]),
+        }
+        self._api_send(payload)
+
+    def _api_reports(self):
+        client = self._api_auth()
+        if not client:
+            self._api_send({"error": "unauthorized"}, 401)
+            return
+        from .client_report import build_client_report
+        out = []
+        for r in _client_projects(self.conn, client["id"]):
+            project = {"_id": r["project_id"], "domain": r["domain"]}
+            out.append({"domain": r["domain"],
+                        "text": build_client_report(self.conn, project,
+                                                    days=7)})
+        self._api_send({"reports": out})
+
+    def _api_requests(self):
+        client = self._api_auth()
+        if not client:
+            self._api_send({"error": "unauthorized"}, 401)
+            return
+        rows = self.conn.execute(
+            "SELECT * FROM project_request WHERE client_id=? "
+            "ORDER BY created_at DESC", (client["id"],)).fetchall()
+        self._api_send({"requests": [dict(r) for r in rows],
+                        "trial_used": _trial_used(self.conn, client["id"])})
+
+    def _api_new(self):
+        client = self._api_auth()
+        if not client:
+            self._api_send({"error": "unauthorized"}, 401)
+            return
+        length = int(self.headers.get("Content-Length") or 0)
+        raw = self.rfile.read(length).decode("utf-8", "replace")
+        body = json.loads(raw or "{}")
+        ok, msg = create_request(self.conn, client, body)
+        self._api_send({"ok": ok, "message": msg}, 200 if ok else 400)
+
+    def _api_verify_domain(self):
+        client = self._api_auth()
+        if not client:
+            self._api_send({"error": "unauthorized"}, 401)
+            return
+        length = int(self.headers.get("Content-Length") or 0)
+        raw = self.rfile.read(length).decode("utf-8", "replace")
+        body = json.loads(raw or "{}")
+        ok, msg = verify_and_activate(self.conn, client["id"],
+                                      str(body.get("id") or ""))
+        self._api_send({"ok": ok, "message": msg}, 200 if ok else 400)
+
+    def _api_register(self):
+        length = int(self.headers.get("Content-Length") or 0)
+        raw = self.rfile.read(length).decode("utf-8", "replace")
+        body = json.loads(raw or "{}")
+        email = (body.get("email") or "").strip().lower()
+        password = body.get("password") or ""
+        if "@" not in email or len(password) < 8:
+            self._api_send({"ok": False,
+                            "error": "invalid email or short password"}, 400)
+            return
+        if self.conn.execute("SELECT 1 FROM client WHERE email=?",
+                             (email,)).fetchone():
+            self._api_send({"ok": False, "error": "already registered"}, 400)
+            return
+        token = secrets.token_urlsafe(32)
+        exp = (datetime.utcnow() + timedelta(hours=VERIFY_HOURS)).isoformat()
+        self.conn.execute(
+            """INSERT INTO client(email, password_hash, verified,
+               verify_token, verify_expires, role)
+               VALUES(?,?,0,?,?,
+                 CASE WHEN ? IN (SELECT email FROM admin_whitelist)
+                   THEN 'admin' ELSE 'client' END)""",
+            (email, hash_password(password), token, exp, email))
+        self.conn.commit()
+        link = f"{self._base_url()}/verify?token={token}"
+        dev = os.environ.get("PORTAL_DEV") == "1" or \
+            self.cfg.get("portal", {}).get("dev")
+        if dev:
+            print(f"portal: DEV verification link for {email}: {link}",
+                  flush=True)
+            self._api_send({"ok": True, "dev_link": link})
             return
         try:
-            found = fetch_meta_token(_verify_url(req["domain"]))
+            send_mail(self.cfg, email, "Verify your client portal account",
+                      f"Confirm your registration:\n\n{link}\n\n"
+                      f"Link valid for {VERIFY_HOURS}h.\n")
+            self._api_send({"ok": True})
         except Exception as e:  # noqa: BLE001
-            self._page_new(notice=f"Could not fetch {_esc(req['domain'])}: "
-                                  f"{_esc(str(e)[:120])}")
+            self._api_send({"ok": False, "error": str(e)[:200]}, 500)
+
+    def _api_login(self):
+        length = int(self.headers.get("Content-Length") or 0)
+        raw = self.rfile.read(length).decode("utf-8", "replace")
+        body = json.loads(raw or "{}")
+        email = (body.get("email") or "").strip().lower()
+        password = body.get("password") or ""
+        row = self.conn.execute("SELECT * FROM client WHERE email=?",
+                                (email,)).fetchone()
+        if not row or not check_password(password, row["password_hash"]):
+            self._api_send({"ok": False, "error": "wrong credentials"}, 401)
             return
-        if found != req["verify_token"]:
-            self._page_new(notice="Verification tag not found on your "
-                                  "homepage — add it to <head> and retry.")
+        if not row["verified"]:
+            self._api_send({"ok": False, "error": "not verified"}, 403)
             return
-        result = activate_request(self.conn, req)
-        note = (f"{_esc(req['domain'])} verified — project active with "
-                f"{result['credits']} trial live links."
-                if result["trial"] else
-                f"{_esc(req['domain'])} verified — project active "
-                "(trial already used on this account).")
-        self._page_new(notice=note)
+        token = _new_session(self.conn, row["id"])
+        self._api_send({"ok": True, "token": token,
+                        "role": row["role"], "email": email})
+
+    def _api_logout(self):
+        token = self.headers.get("X-Auth-Token") or \
+            self._cookie("osched_session")
+        if token:
+            self.conn.execute("DELETE FROM client_session WHERE token=?",
+                              (token,))
+            self.conn.commit()
+        self._api_send({"ok": True})
+
+    def _api_admin(self):
+        client = self._api_auth()
+        if not client or client["role"] != "admin":
+            self._api_send({"error": "forbidden"}, 403)
+            return
+        drafts = [dict(r) for r in self.conn.execute(
+            """SELECT r.*, c.email FROM project_request r
+               JOIN client c ON c.id=r.client_id
+               WHERE r.verify_state IN ('draft','verified')
+               ORDER BY r.created_at""")]
+        actives = [dict(r) for r in self.conn.execute(
+            """SELECT r.*, c.email FROM project_request r
+               JOIN client c ON c.id=r.client_id
+               WHERE r.verify_state='active' ORDER BY r.domain""")]
+        clients = [dict(r) for r in self.conn.execute(
+            "SELECT id,email,role,verified,created_at FROM client "
+            "ORDER BY email")]
+        wl = [r["email"] for r in self.conn.execute(
+            "SELECT email FROM admin_whitelist ORDER BY email")]
+        self._api_send({"drafts": drafts, "actives": actives,
+                        "clients": clients, "whitelist": wl})
+
+    def _api_admin_post(self):
+        client = self._api_auth()
+        if not client or client["role"] != "admin":
+            self._api_send({"error": "forbidden"}, 403)
+            return
+        length = int(self.headers.get("Content-Length") or 0)
+        raw = self.rfile.read(length).decode("utf-8", "replace")
+        body = json.loads(raw or "{}")
+        ok, msg = admin_action(self.conn, client, body.get("action"),
+                               id=body.get("id"),
+                               quota_total=body.get("quota_total"),
+                               email=body.get("email"))
+        self._api_send({"ok": ok, "message": msg}, 200 if ok else 400)
 
     # -- super admin (whitelist privileges) --------------------------------
 
@@ -991,60 +1173,116 @@ class PortalHandler(BaseHTTPRequestHandler):
             self._page_admin(notice="Forbidden.")
             return
         f = self._form()
-        action = f.get("action")
-        if action == "approve":
-            req = self.conn.execute(
-                "SELECT * FROM project_request WHERE id=? AND "
-                "verify_state IN ('draft','verified')",
-                (f.get("id") or "",)).fetchone()
-            if req:
-                result = activate_request(self.conn, req)
-                self._page_admin(notice=f"{_esc(req['domain'])} approved "
-                                        f"({result['credits']} trial "
-                                        f"credits).")
-            else:
-                self._page_admin(notice="Request not found.")
-        elif action == "quota":
-            try:
-                total = max(0, int(f.get("quota_total") or 0))
-            except ValueError:
-                total = 0
-            self.conn.execute(
-                "UPDATE project_request SET quota_total=? WHERE id=? AND "
-                "verify_state='active'", (total, f.get("id") or ""))
-            self.conn.commit()
-            self._page_admin(notice="Quota updated.")
-        elif action == "whitelist":
-            email = (f.get("email") or "").strip().lower()
-            if not email:
-                self._page_admin(notice="Empty email.")
-                return
-            wl_now = {r["email"] for r in self.conn.execute(
-                "SELECT email FROM admin_whitelist")}
-            if email in wl_now:
-                if len(wl_now) == 1:
-                    self._page_admin(notice="Cannot remove the last "
-                                            "whitelisted admin — add "
-                                            "another one first.")
-                    return
-                self.conn.execute("DELETE FROM admin_whitelist WHERE email=?",
-                                  (email,))
-                self.conn.execute(
-                    "UPDATE client SET role='client' WHERE email=?", (email,))
-                self.conn.commit()
-                self._page_admin(notice=f"{_esc(email)} removed from "
-                                        f"whitelist.")
-            else:
-                self.conn.execute(
-                    "INSERT OR IGNORE INTO admin_whitelist(email, note) "
-                    "VALUES(?, 'added by admin')", (email,))
-                self.conn.execute(
-                    "UPDATE client SET role='admin' WHERE email=?", (email,))
-                self.conn.commit()
-                self._page_admin(notice=f"{_esc(email)} whitelisted "
-                                        f"(admin).")
-        else:
-            self._page_admin(notice="Unknown action.")
+        ok, notice = admin_action(self.conn, client, f.get("action"),
+                                  id=f.get("id"),
+                                  quota_total=f.get("quota_total"),
+                                  email=f.get("email"))
+        self._page_admin(notice=notice)
+
+
+
+def create_request(conn, client, form: dict) -> tuple[bool, str]:
+    """Self-service project creation core (shared by HTML and JSON)."""
+    domain = normalize_domain(form.get("domain"))
+    dev = os.environ.get("PORTAL_DEV") == "1"
+    err = validate_domain(domain, dev=dev)
+    if err:
+        return False, err
+    if _domain_claimed(conn, domain, client["id"]):
+        return False, "This domain is already claimed by another account."
+    dup = conn.execute(
+        "SELECT 1 FROM project_request WHERE client_id=? AND domain=?",
+        (client["id"], domain)).fetchone()
+    if dup:
+        return False, "You already have a request for this domain."
+    tags = [t.strip() for t in (form.get("tags") or "").split(",")
+            if t.strip()]
+    token = "osched-" + secrets.token_urlsafe(16)
+    conn.execute(
+        """INSERT INTO project_request(client_id, domain, site_title,
+           site_summary, contact_email, tags_json, verify_method,
+           verify_token, verify_state)
+           VALUES(?,?,?,?,?,?, 'meta', ?, 'draft')""",
+        (client["id"], domain, (form.get("site_title") or "").strip(),
+         (form.get("site_summary") or "").strip(),
+         (form.get("contact_email") or "").strip(),
+         json.dumps(tags), token))
+    conn.commit()
+    return True, domain
+
+
+def verify_and_activate(conn, client_id: int, rid: str) -> tuple[bool, str]:
+    """Ownership check + activation core (shared by HTML and JSON)."""
+    req = conn.execute(
+        """SELECT * FROM project_request WHERE id=? AND client_id=?
+           AND verify_state='draft'""",
+        (rid, client_id)).fetchone()
+    if not req:
+        return False, "No pending request found."
+    if _domain_claimed(conn, req["domain"], client_id):
+        return False, "This domain was claimed by another account."
+    try:
+        found = fetch_meta_token(_verify_url(req["domain"]))
+    except Exception as e:  # noqa: BLE001
+        return False, f"Could not fetch {req['domain']}: {str(e)[:120]}"
+    if found != req["verify_token"]:
+        return False, ("Verification tag not found on your homepage — "
+                       "add it to <head> and retry.")
+    result = activate_request(conn, req)
+    if result["trial"]:
+        return True, (f"{req['domain']} verified — project active with "
+                      f"{result['credits']} trial live links.")
+    return True, f"{req['domain']} verified — project active."
+
+
+def admin_action(conn, client, action: str, **kw) -> tuple[bool, str]:
+    """Shared admin action core for HTML and JSON paths.
+
+    Returns (ok, notice_text) — plain text, escape at render time.
+    """
+    action = (action or "").strip()
+    if action == "approve":
+        req = conn.execute(
+            "SELECT * FROM project_request WHERE id=? AND "
+            "verify_state IN ('draft','verified')",
+            (kw.get("id") or "",)).fetchone()
+        if not req:
+            return False, "Request not found."
+        result = activate_request(conn, req)
+        return True, (f"{req['domain']} approved "
+                      f"({result['credits']} trial credits).")
+    if action == "quota":
+        try:
+            total = max(0, int(kw.get("quota_total") or 0))
+        except (TypeError, ValueError):
+            total = 0
+        conn.execute(
+            "UPDATE project_request SET quota_total=? WHERE id=? AND "
+            "verify_state='active'", (total, kw.get("id") or ""))
+        conn.commit()
+        return True, "Quota updated."
+    if action == "whitelist":
+        email = (kw.get("email") or "").strip().lower()
+        if not email:
+            return False, "Empty email."
+        wl_now = {r["email"] for r in conn.execute(
+            "SELECT email FROM admin_whitelist")}
+        if email in wl_now:
+            if len(wl_now) == 1:
+                return False, ("Cannot remove the last whitelisted admin "
+                               "- add another one first.")
+            conn.execute("DELETE FROM admin_whitelist WHERE email=?", (email,))
+            conn.execute("UPDATE client SET role='client' WHERE email=?",
+                         (email,))
+            conn.commit()
+            return True, f"{email} removed from whitelist."
+        conn.execute(
+            "INSERT OR IGNORE INTO admin_whitelist(email, note) "
+            "VALUES(?, 'added by admin')", (email,))
+        conn.execute("UPDATE client SET role='admin' WHERE email=?", (email,))
+        conn.commit()
+        return True, f"{email} whitelisted (admin)."
+    return False, "Unknown action."
 
 
 # --------------------------------------------------------------------------
