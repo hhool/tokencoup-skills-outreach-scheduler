@@ -166,7 +166,10 @@ def _client_projects(conn, client_id: int):
              AND pl.state='live') AS live,
           (SELECT COUNT(*) FROM link_verify lv JOIN plan pl2 ON pl2.id=lv.plan_id
              WHERE pl2.project_id=pr.id AND lv.result='live'
-               AND lv.checked_at >= date('now','-30 days')) AS live30
+               AND lv.checked_at >= date('now','-30 days')) AS live30,
+          (SELECT COUNT(*) FROM link_verify lv JOIN plan pl2 ON pl2.id=lv.plan_id
+             WHERE pl2.project_id=pr.id AND lv.result='live'
+               AND lv.checked_at >= date('now','start of month')) AS live_month
         FROM project_request req JOIN project pr ON pr.id=req.project_id
         WHERE req.client_id=? AND req.verify_state='active'
         ORDER BY pr.domain
@@ -190,6 +193,104 @@ def _live_ledger(conn, client_id: int, limit: int = 20):
         """, (client_id, limit)).fetchall()
 
 
+def _capacity_rows(conn, client_id: int, day: str):
+    """Delivery capacity gauge (View A layer 2): placements touched today."""
+    return conn.execute(
+        """
+        SELECT p.domain AS placement, COUNT(*) AS used
+        FROM plan pl
+        JOIN project pr ON pr.id = pl.project_id
+        JOIN project_request req
+          ON req.project_id = pr.id AND req.verify_state='active'
+        JOIN match m ON m.id = pl.match_id
+        JOIN pool p ON p.id = m.pool_id
+        WHERE req.client_id=? AND pl.executed_at >= ?
+          AND pl.executed_at < date(?, '+1 day')
+        GROUP BY p.domain ORDER BY used DESC LIMIT 8
+        """, (client_id, day, day)).fetchall()
+
+
+def _dr_buckets(conn, client_id: int):
+    rows = conn.execute(
+        """
+        SELECT p.dr
+        FROM link_verify lv
+        JOIN plan pl ON pl.id = lv.plan_id
+        JOIN project pr ON pr.id = pl.project_id
+        JOIN project_request req
+          ON req.project_id = pr.id AND req.verify_state='active'
+        JOIN match m ON m.id = pl.match_id
+        JOIN pool p ON p.id = m.pool_id
+        WHERE req.client_id=? AND lv.result='live'
+        """, (client_id,)).fetchall()
+    buckets = {"<30": 0, "30-60": 0, "60+": 0, "unknown": 0}
+    for r in rows:
+        dr = r["dr"]
+        if dr is None:
+            buckets["unknown"] += 1
+        elif dr < 30:
+            buckets["<30"] += 1
+        elif dr < 60:
+            buckets["30-60"] += 1
+        else:
+            buckets["60+"] += 1
+    return buckets
+
+
+def _source_mix(conn, client_id: int):
+    return conn.execute(
+        """
+        SELECT COALESCE(NULLIF(p.site_type, ''), 'unclassified') AS stype,
+               COUNT(*) AS n
+        FROM link_verify lv
+        JOIN plan pl ON pl.id = lv.plan_id
+        JOIN project pr ON pr.id = pl.project_id
+        JOIN project_request req
+          ON req.project_id = pr.id AND req.verify_state='active'
+        JOIN match m ON m.id = pl.match_id
+        JOIN pool p ON p.id = m.pool_id
+        WHERE req.client_id=? AND lv.result='live'
+        GROUP BY stype ORDER BY n DESC
+        """, (client_id,)).fetchall()
+
+
+def _funnel(conn, client_id: int, weeks: int = 6):
+    """Weekly submitted vs live counts (View B tier 3 trend).
+
+    Week axis is computed in python; sqlite only answers per-week counts.
+    """
+    starts = [(datetime.utcnow().date() - timedelta(days=7 * i)).isoformat()
+              for i in range(weeks - 1, -1, -1)]
+    out = []
+    for s in starts:
+        e = (datetime.fromisoformat(s) + timedelta(days=7)).date().isoformat()
+        submitted = conn.execute(
+            """
+            SELECT COUNT(*) AS n FROM plan pl
+            JOIN project pr ON pr.id = pl.project_id
+            JOIN project_request req
+              ON req.project_id = pr.id AND req.verify_state='active'
+            WHERE req.client_id=? AND pl.executed_at >= ?
+              AND pl.executed_at < ? AND pl.state IN
+              ('submitted','sent','live')
+            """, (client_id, s, e)).fetchone()["n"]
+        live = conn.execute(
+            """
+            SELECT COUNT(*) AS n
+            FROM link_verify lv
+            JOIN plan pl ON pl.id = lv.plan_id
+            JOIN project pr ON pr.id = pl.project_id
+            JOIN project_request req
+              ON req.project_id = pr.id AND req.verify_state='active'
+            WHERE req.client_id=? AND lv.result='live'
+              AND lv.checked_at >= ? AND lv.checked_at < ?
+            """, (client_id, s, e)).fetchone()["n"]
+        rate = f"{live / submitted * 100:.0f}%" if submitted else "—"
+        out.append({"week": s, "submitted": submitted, "live": live,
+                    "rate": rate})
+    return out
+
+
 def render_dashboard(conn, client) -> str:
     rows = _client_projects(conn, client["id"])
     if rows:
@@ -197,16 +298,37 @@ def render_dashboard(conn, client) -> str:
             f"<tr><td>{_esc(r['domain'])}</td>"
             f"<td>{_esc(r['quota_type'])}</td>"
             f"<td>{r['live']} / {r['quota_total']}</td>"
+            f"<td>{r['live_month']}</td>"
             f"<td>{r['inflight']}</td><td>{r['pending']}</td>"
             f"<td>{r['live30']}</td></tr>"
             for r in rows)
         quota_card = (
             "<div class='card'><h2>Quota consumption</h2>"
             "<table><tr><th>project</th><th>type</th><th>live / quota</th>"
-            "<th>in flight</th><th>pending</th><th>live (30d)</th></tr>"
+            "<th>live (this month)</th><th>in flight</th><th>pending</th>"
+            "<th>live (30d)</th></tr>"
             + quota_rows + "</table>"
             "<p class='muted'>Only confirmed live links consume credits; "
             "in-flight and never-live items are not billed.</p></div>")
+
+        cap = _capacity_rows(conn, client["id"],
+                             datetime.utcnow().date().isoformat())
+        if cap:
+            cap_rows = "".join(
+                f"<tr><td>{_esc(r['placement'])}</td>"
+                f"<td>{r['used']} / 100</td></tr>"
+                for r in cap)
+        else:
+            cap_rows = ("<tr><td colspan='2' class='muted'>nothing executed "
+                        "today</td></tr>")
+        capacity_card = (
+            "<div class='card'><h2>Delivery capacity today</h2>"
+            "<table><tr><th>placement domain</th><th>addresses used</th>"
+            "</tr>" + cap_rows + "</table>"
+            "<p class='muted'>Per-domain platform budget: 100 addresses / "
+            "24h. Pacing is deliberate — submissions are staggered.</p>"
+            "</div>")
+
         ledger = _live_ledger(conn, client["id"])
         if ledger:
             led_rows = "".join(
@@ -217,20 +339,62 @@ def render_dashboard(conn, client) -> str:
             led_rows = ("<tr><td colspan='4' class='muted'>no live links "
                         "confirmed yet</td></tr>")
         effect_card = (
-            "<div class='card'><h2>Promotion effect</h2>"
+            "<div class='card'><h2>Live-link ledger</h2>"
             "<table><tr><th>project</th><th>placement domain</th><th>DR</th>"
             "<th>confirmed</th></tr>" + led_rows + "</table>"
-            "<p class='muted'>Tier 1 evidence (live-link ledger). DR band and "
-            "funnel trend land with the next portal phase.</p></div>")
+            "<p class='muted'>Tier 1 evidence — each row is a consumed "
+            "credit with a receipt. <a href='/reports'>Weekly report "
+            "archive →</a></p></div>")
+
+        b = _dr_buckets(conn, client["id"])
+        mix = _source_mix(conn, client["id"])
+        mix_rows = "".join(f"<tr><td>{_esc(r['stype'])}</td><td>{r['n']}</td>"
+                           "</tr>" for r in mix) or \
+            "<tr><td class='muted'>no data yet</td></tr>"
+        quality_card = (
+            "<div class='card'><h2>Placement quality</h2>"
+            f"<p>DR distribution — &lt;30: <b>{b['<30']}</b>, 30–60: "
+            f"<b>{b['30-60']}</b>, 60+: <b>{b['60+']}</b>, "
+            f"unranked: <b>{b['unknown']}</b></p>"
+            "<table><tr><th>source type</th><th>live links</th></tr>"
+            + mix_rows + "</table></div>")
+
+        weeks = _funnel(conn, client["id"])
+        f_rows = "".join(
+            f"<tr><td>{w['week']}</td><td>{w['submitted']}</td>"
+            f"<td>{w['live']}</td><td>{w['rate']}</td></tr>"
+            for w in weeks)
+        trend_card = (
+            "<div class='card'><h2>Funnel trend (weekly)</h2>"
+            "<table><tr><th>week starting</th><th>submitted</th>"
+            "<th>confirmed live</th><th>live rate</th></tr>"
+            + f_rows + "</table></div>")
+        cards = (quota_card + capacity_card + effect_card + quality_card
+                 + trend_card)
     else:
-        quota_card = ("<div class='card'><h2>Quota consumption</h2>"
-                      "<p class='muted'>No active project yet. Self-service "
-                      "project creation with trial credits ships next "
-                      "(client-portal §1.5).</p></div>")
-        effect_card = ("<div class='card'><h2>Promotion effect</h2>"
-                       "<p class='muted'>Nothing to show yet.</p></div>")
-    return (f"<h1>Welcome, {_esc(client['email'])}</h1>"
-            + quota_card + effect_card)
+        cards = ("<div class='card'><h2>Quota consumption</h2>"
+                 "<p class='muted'>No active project yet. Self-service "
+                 "project creation with trial credits ships next "
+                 "(client-portal §1.5).</p></div>"
+                 "<div class='card'><h2>Promotion effect</h2>"
+                 "<p class='muted'>Nothing to show yet.</p></div>")
+    return (f"<h1>Welcome, {_esc(client['email'])}</h1>" + cards)
+
+
+def render_reports(conn, client) -> str:
+    """Report archive: B2 machinery rendered on demand (no mail)."""
+    from .client_report import build_client_report
+    rows = _client_projects(conn, client["id"])
+    if not rows:
+        return ("<h1>Report archive</h1><div class='card'>"
+                "<p class='muted'>No active project yet.</p></div>")
+    parts = ["<h1>Report archive (last 7 days)</h1>"]
+    for r in rows:
+        project = {"_id": r["project_id"], "domain": r["domain"]}
+        text = build_client_report(conn, project, days=7)
+        parts.append(f"<div class='card'><h2>{_esc(r['domain'])}</h2>"
+                     f"<pre>{_esc(text)}</pre></div>")
+    return "\n".join(parts)
 
 
 # --------------------------------------------------------------------------
@@ -296,6 +460,8 @@ class PortalHandler(BaseHTTPRequestHandler):
             self._page_verify()
         elif path == "/dashboard":
             self._page_dashboard()
+        elif path == "/reports":
+            self._page_reports()
         elif path == "/logout":
             tok = self._cookie("osched_session")
             if tok:
@@ -353,10 +519,23 @@ class PortalHandler(BaseHTTPRequestHandler):
             self._redirect("/")
             return
         nav = ("<a href='/dashboard' style='color:inherit'>dashboard</a> "
+              "<a href='/reports' style='color:inherit'>reports</a> "
               "<form method='post' action='/logout' style='display:inline'>"
               "<button style='padding:2px 8px'>Log out</button></form>")
         self._html(render_dashboard(self.conn, client),
                    title="dashboard", nav=nav)
+
+    def _page_reports(self):
+        client = _client_from_session(self.conn, self._cookie("osched_session"))
+        if not client:
+            self._redirect("/")
+            return
+        nav = ("<a href='/dashboard' style='color:inherit'>dashboard</a> "
+              "<a href='/reports' style='color:inherit'>reports</a> "
+              "<form method='post' action='/logout' style='display:inline'>"
+              "<button style='padding:2px 8px'>Log out</button></form>")
+        self._html(render_reports(self.conn, client),
+                   title="reports", nav=nav)
 
     def do_POST(self):
         path = urlparse(self.path).path
