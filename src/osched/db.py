@@ -101,6 +101,7 @@ CREATE TABLE IF NOT EXISTS account (
   registered_at TEXT,
   last_used_at TEXT,
   note         TEXT,
+  activation_url TEXT,          -- latest activation link extracted from mail
   UNIQUE(project_id, dir_domain, email)
 );
 
@@ -154,6 +155,14 @@ CREATE INDEX IF NOT EXISTS idx_plan_date ON plan(scheduled_date, state);
 """
 
 
+def _migrate(conn: sqlite3.Connection) -> None:
+    """Lightweight additive migrations for pre-existing DBs (idempotent)."""
+    cols = {r["name"] for r in conn.execute(
+        "PRAGMA table_info(account)").fetchall()}
+    if "activation_url" not in cols:
+        conn.execute("ALTER TABLE account ADD COLUMN activation_url TEXT")
+
+
 def connect(data_root: pathlib.Path) -> sqlite3.Connection:
     """Open (and initialize) the pool DB under data_root. WAL mode."""
     db_path = data_root / "pool.sqlite3"
@@ -161,4 +170,5 @@ def connect(data_root: pathlib.Path) -> sqlite3.Connection:
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA journal_mode=WAL")
     conn.executescript(SCHEMA)
+    _migrate(conn)
     return conn

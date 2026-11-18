@@ -374,6 +374,21 @@ def cmd_mail_verify(cfg: dict, domain: str, days: int, limit: int) -> int:
     return 0
 
 
+def cmd_account_activate(cfg: dict, domain: str, headless: bool,
+                         limit: int) -> int:
+    conn = connect(data_root(cfg))
+    project = _get_project(cfg, conn, domain)
+    stats = accounts_mod.run_activation(conn, project, headless=headless,
+                                        limit=limit)
+    print(f"account-activate[{domain}]: "
+          + json.dumps({k: v for k, v in stats.items() if k != "rows"},
+                       ensure_ascii=False))
+    for r in stats.get("rows", []):
+        print(f"  account#{r['account_id']:<3} {r['state']:<20} "
+              f"{r['domain']:<28} {r['note']}")
+    return 0
+
+
 def cmd_client_report(cfg: dict, domain: str, days: int, ref: str | None,
                       dry_run: bool) -> int:
     conn = connect(data_root(cfg))
@@ -521,6 +536,11 @@ def main(argv: list[str] | None = None) -> int:
     p_mv.add_argument("--days", type=int, default=3,
                       help="scan mails since N days ago")
     p_mv.add_argument("--limit", type=int, default=50)
+    p_aact = sub.add_parser("account-activate",
+                            help="CUA-click pending activation links (B3)")
+    p_aact.add_argument("domain")
+    p_aact.add_argument("--headless", action="store_true")
+    p_aact.add_argument("--limit", type=int, default=0)
     sub.add_parser("stats", help="pool summary")
     args = ap.parse_args(argv)
 
@@ -566,6 +586,9 @@ def main(argv: list[str] | None = None) -> int:
         return cmd_account(cfg, args.action, args.domain, args)
     if args.cmd == "mail-verify":
         return cmd_mail_verify(cfg, args.domain, args.days, args.limit)
+    if args.cmd == "account-activate":
+        return cmd_account_activate(cfg, args.domain, args.headless,
+                                    args.limit)
     if args.cmd == "stats":
         return cmd_stats(cfg)
     return 2

@@ -22,10 +22,16 @@ import email
 import imaplib
 import json
 import re
+import time
 from datetime import date, datetime, timedelta
 from email.header import decode_header
 
 from .config import ConfigError, require_env_key
+
+try:
+    from playwright.sync_api import sync_playwright
+except ImportError:  # playwright is optional until an activation run
+    sync_playwright = None
 
 ACT_LINK_RE = re.compile(
     r'href=["\']?(https?://[^"\'>\s]+(?:activat|verify|confirm|validat|'
@@ -135,16 +141,22 @@ def _extract_links_and_codes(body: str) -> tuple[list[str], list[str]]:
     return links[:5], codes[:3]
 
 
-def _activate_pending_account(conn, project_id: int, dir_domain: str) -> bool:
+def _activate_pending_account(conn, project_id: int, dir_domain: str,
+                              links: list[str]) -> bool:
+    """Flip a pending account to active; backfill the activation link."""
     cur = conn.execute(
-        "SELECT id FROM account WHERE project_id=? AND dir_domain=? AND "
-        "status='pending-activation'", (project_id, dir_domain),
+        "SELECT id, activation_url FROM account WHERE project_id=? AND "
+        "dir_domain=? AND status='pending-activation'",
+        (project_id, dir_domain),
     ).fetchone()
     if not cur:
         return False
     conn.execute(
-        "UPDATE account SET status='active', registered_at=coalesce("
-        "registered_at, datetime('now')) WHERE id=?", (cur["id"],))
+        """UPDATE account SET status='active',
+             registered_at=coalesce(registered_at, datetime('now')),
+             activation_url=coalesce(activation_url, ?)
+           WHERE id=?""",
+        (links[0] if links else None, cur["id"]))
     return True
 
 
@@ -183,9 +195,17 @@ def fetch_verification_mails(conn, cfg: dict, project: dict, *,
                 activated = False
                 if links and sender_dom:
                     activated = _activate_pending_account(conn, pid,
-                                                          sender_dom)
+                                                          sender_dom, links)
                     if activated:
                         outcome["activated"] += 1
+                    else:
+                        # account exists (or not yet) — keep the freshest
+                        # activation link on the ledger row for the CUA run
+                        conn.execute(
+                            """UPDATE account SET activation_url=?
+                               WHERE project_id=? AND dir_domain=?
+                                 AND activation_url IS NULL""",
+                            (links[0], pid, sender_dom))
                 outcome["items"].append({
                     "from": sender_dom,
                     "subject": _decode_subject(msg.get("Subject"))[:60],
@@ -229,3 +249,92 @@ def _mail_body(msg) -> str:
     text = "\n".join(chunks)
     # strip html tags so href= regex still works (it reads the raw attrs)
     return text
+
+
+# --------------------------------------------------------------------------
+# CUA activation: click the activation link in the real browser (B3 phase 2)
+# --------------------------------------------------------------------------
+
+# Words that mark a successful activation/confirmation page.
+ACT_HINTS = ("activated", "confirmed", "verified", "welcome", "success",
+             "thank", "account is ready", "email address has been",
+             "激活成功", "验证成功", "已确认")
+
+
+def pending_activations(conn, project_id: int, limit: int = 0) -> list:
+    rows = conn.execute(
+        """SELECT id, dir_domain, email, activation_url FROM account
+           WHERE project_id=? AND status='pending-activation'
+             AND activation_url IS NOT NULL
+           ORDER BY registered_at DESC, id DESC""",
+        (project_id,),
+    ).fetchall()
+    return rows[:limit] if limit else rows
+
+
+def _activation_looks_successful(page) -> bool:
+    try:
+        body = page.inner_text("body", timeout=5000).lower()[:4000]
+        return any(h in body for h in ACT_HINTS)
+    except Exception:
+        return False
+
+
+def _activate_one(page, row) -> dict:
+    started = time.time()
+    page.goto(row["activation_url"], timeout=30000,
+              wait_until="domcontentloaded")
+    page.wait_for_timeout(1500)
+    ok = _activation_looks_successful(page)
+    return {"state": "active" if ok else "pending-activation",
+            "note": ("activation page confirmed" if ok
+                     else "no activation marker; keeping pending, "
+                          "escalate to human if repeated"),
+            "secs": round(time.time() - started, 1)}
+
+
+def run_activation(conn, project: dict, *, headless: bool = False,
+                   limit: int = 0) -> dict:
+    """Visit pending accounts' activation links in real Chrome (serial)."""
+    if sync_playwright is None:
+        raise RuntimeError(
+            "playwright not installed — run: pip install playwright")
+    from .cua import _launch
+
+    rows = pending_activations(conn, project["_id"], limit)
+    stats = {"due": len(rows), "activated": 0, "pending": 0, "rows": []}
+    if not rows:
+        return stats
+    with sync_playwright() as pw:
+        browser = _launch(pw, headless)
+        page = browser.new_page()
+        try:
+            for row in rows:
+                try:
+                    outcome = _activate_one(page, row)
+                except Exception as e:  # noqa: BLE001 — one site never stops the run
+                    outcome = {"state": "pending-activation",
+                               "note": f"error: {str(e)[:120]}"}
+                if outcome["state"] == "active":
+                    stats["activated"] += 1
+                    conn.execute(
+                        "UPDATE account SET status='active', "
+                        "registered_at=coalesce(registered_at, "
+                        "datetime('now')) WHERE id=?", (row["id"],))
+                else:
+                    stats["pending"] += 1
+                conn.execute(
+                    "INSERT INTO run_log(action, target, result, note) "
+                    "VALUES('account-activate', ?, ?, ?)",
+                    (f"{row['dir_domain']} account#{row['id']}",
+                     outcome["state"],
+                     json.dumps({k: v for k, v in outcome.items()
+                                 if k != "state"}, ensure_ascii=False)))
+                stats["rows"].append({"account_id": row["id"],
+                                      "domain": row["dir_domain"],
+                                      "state": outcome["state"],
+                                      "note": outcome["note"]})
+        finally:
+            browser.close()
+    conn.commit()
+    return stats

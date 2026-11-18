@@ -57,6 +57,7 @@ case "$segment" in
     $PY bin/osched.py verify || true   # B1: re-visit old submissions for live links
     for p in $(projects); do
       $PY bin/osched.py mail-verify "$p" || true   # B3: fetch verification mails
+      $PY bin/osched.py account-activate "$p" --headless || true   # B3: click activation links
       $PY bin/osched.py execute "$p" || true
       $PY bin/osched.py cua "$p" --headless || true
     done
