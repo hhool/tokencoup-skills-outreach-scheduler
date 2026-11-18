@@ -1,0 +1,24 @@
+# fly.io deployment template — copy to fly.toml, set app name, then deploy.
+# 中文：复制为 fly.toml 并改 app 名；数据在 volume，密钥用 fly secrets。
+app = "tokencoup-outreach-scheduler"   # change to your app name
+primary_region = "hkg"                 # pick a region; note OPR IP binding!
+
+[build]
+  dockerfile = "Dockerfile"
+
+[env]
+  OSCHED_DATA_ROOT = "/data"
+  TZ = "Asia/Shanghai"                # supercronic times follow TZ
+
+# one small VM is plenty (stdlib-only workload, ~no traffic)
+[vm]
+  size = "shared-cpu-1x"
+  memory = "512mb"
+
+# data volume: pool.sqlite3, project YAMLs, templates, secrets-env all live here
+[[mounts]]
+  source = "osched_data"
+  destination = "/data"
+
+[processes]
+  app = "supercronic /crontab"

@@ -61,9 +61,16 @@ case "$segment" in
     $PY bin/osched.py verify || true   # B1: re-visit old submissions for live links
     for p in $(projects); do
       $PY bin/osched.py mail-verify "$p" || true   # B3: fetch verification mails
-      $PY bin/osched.py account-activate "$p" --headless || true   # B3: click activation links
       $PY bin/osched.py execute "$p" || true
-      $PY bin/osched.py cua "$p" --headless || true
+      # CUA channel needs local real Chrome — desktop machines only.
+      # On a server (fly.io) this is skipped; state='cua' plans wait for a
+      # local pass (see docs/deployment.md).
+      if [ -d "/Applications/Google Chrome.app" ] \
+         || command -v google-chrome >/dev/null 2>&1 \
+         || command -v google-chrome-stable >/dev/null 2>&1; then
+        $PY bin/osched.py cua "$p" --headless || true
+        $PY bin/osched.py account-activate "$p" --headless || true   # B3
+      fi
     done
     $PY bin/osched.py report
     $PY bin/osched.py overview   # B5: per-client ops view + SLA alerts

@@ -26,6 +26,10 @@ def load_config(path: str | None = None) -> dict[str, Any]:
     """Load and validate global config. Later files override earlier ones."""
     if path:
         candidates = [path]
+    elif os.environ.get("OSCHED_CONFIG"):
+        # hosted deployments (fly.io): config lives on the data volume —
+        # never committed to the repo
+        candidates = [os.environ["OSCHED_CONFIG"]]
     else:
         candidates = [p for p in DEFAULT_CONFIG_PATHS if os.path.exists(p)]
     if not candidates:
@@ -46,7 +50,8 @@ def load_config(path: str | None = None) -> dict[str, Any]:
 
 
 def _validate(cfg: dict[str, Any], base_dir: str) -> None:
-    data_root = cfg.get("data_root")
+    # env override wins (fly.io volume / any hosted deployment)
+    data_root = os.environ.get("OSCHED_DATA_ROOT") or cfg.get("data_root")
     if not data_root:
         raise ConfigError("data_root is required (repo-local 'data/' or outside path)")
     root = pathlib.Path(data_root)

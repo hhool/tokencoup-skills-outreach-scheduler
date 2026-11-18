@@ -101,6 +101,23 @@ and periodic summary (report.email) — and one mailbox may serve both.
 B2's recipient is the summary role; B3's credentials are the registration
 role. Splitting into two mailboxes later is config-only.
 
+## Strategy context (ratified 2026-11-18)
+
+- **Why this exists**: the served sites must pass AdSense review and grow
+  on their own traffic; backlinks are the traffic engine behind that goal.
+  Every commercial-layer feature traces back to "more real links, proven
+  to the client".
+- **Operations mode**: backend runs on fly.io (HTTP-side pipeline, cron,
+  sqlite volume) — fully agent-free (no WorkBuddy dependency anywhere).
+  CUA (real-Chrome captcha) stays on the desktop for the current sites and
+  is acceptable in early commercial stage; later replace with an
+  open-source or commercial captcha solution (single touch point: §7.1
+  routing). See docs/deployment.md for the duty matrix.
+- **AI layer (later phase)**: the backend will add AI for client
+  requirement/case matching, planning, and capability matching. AI plugs
+  into the existing CLI/DB contracts as a caller, never bypassing human
+  gates. Hook-point table in docs/deployment.md.
+
 ## Backlog snapshot (2026-11-18)
 
 | item | status |

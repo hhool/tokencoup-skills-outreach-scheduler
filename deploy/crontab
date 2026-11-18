@@ -1,0 +1,6 @@
+# cron schedule inside the fly machine (supercronic format: min hour dom month dow)
+# run segment: daily execution + report (09:30 UTC -> adjust to your market)
+30 9 * * * cd /app && scripts/daily.sh run >> /tmp/osched.cron.log 2>&1
+# pipeline segment: supply refresh, weekly + first-of-month (idempotent)
+0 9 * * 1 cd /app && scripts/daily.sh pipeline >> /tmp/osched.cron.log 2>&1
+0 8 1 * * cd /app && scripts/daily.sh pipeline >> /tmp/osched.cron.log 2>&1
