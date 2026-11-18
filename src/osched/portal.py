@@ -23,9 +23,11 @@ import html
 import json
 import os
 import pathlib
+import re
 import secrets
 import sqlite3
 import sys
+import urllib.request
 from datetime import datetime, timedelta
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from urllib.parse import parse_qs, urlparse
@@ -90,6 +92,7 @@ header b {{ letter-spacing:.2px; }}
 main {{ max-width:860px; margin:0 auto; padding:28px 18px 80px; }}
 .card {{ background:var(--panel); border:1px solid var(--border);
   border-radius:10px; padding:22px 26px; margin:14px 0; }}
+textarea {{ width:100%; }}
 input,button {{ font:inherit; padding:8px 12px; border-radius:6px;
   border:1px solid var(--border); }}
 button {{ background:var(--accent); color:#fff; border:none; cursor:pointer; }}
@@ -147,6 +150,105 @@ def _client_from_session(conn, token: str | None):
            WHERE s.token=? AND s.expires_at > datetime('now')""",
         (token,)).fetchone()
     return row
+
+
+# --------------------------------------------------------------------------
+# self-service project creation (client-portal §1.5)
+# --------------------------------------------------------------------------
+
+DOMAIN_RE = re.compile(r"^[a-z0-9-]+(\.[a-z0-9-]+)+$")
+META_RE = re.compile(
+    r"<meta[^>]+(?:name|property)\s*=\s*[\"']osched-verify[\"']"
+    r"[^>]*>", re.I)
+CONTENT_RE = re.compile(r"content\s*=\s*[\"']([^\"']+)[\"']", re.I)
+
+
+def normalize_domain(raw: str) -> str:
+    d = (raw or "").strip().lower()
+    d = re.sub(r"^https?://", "", d)
+    d = d.split("/")[0].strip(".")
+    if d.startswith("www."):
+        d = d[4:]
+    return d
+
+
+def validate_domain(domain: str, *, dev: bool) -> str | None:
+    """Return an error message, or None when acceptable."""
+    if not dev and domain == "localhost":
+        return "localhost is not a verifiable promotion domain."
+    if not DOMAIN_RE.match(domain) and not (dev and domain == "localhost"):
+        return "Not a valid domain (e.g. example.com)."
+    return None
+
+
+def fetch_meta_token(url: str) -> str:
+    """Fetch a page and return its osched-verify meta content ('' if none)."""
+    req = urllib.request.Request(
+        url, headers={"User-Agent": "osched-portal-verify/0.1"})
+    with urllib.request.urlopen(req, timeout=10) as r:
+        body = r.read(512 * 1024).decode("utf-8", "replace")
+    for m in META_RE.finditer(body):
+        cm = CONTENT_RE.search(m.group(0))
+        if cm:
+            return cm.group(1)
+    return ""
+
+
+def _verify_url(domain: str) -> str:
+    base = os.environ.get("PORTAL_VERIFY_FETCH_BASE")
+    if base:  # dev/test override: fetch the stub server instead
+        return base.rstrip("/") + "/"
+    return f"https://{domain}/"
+
+
+def _trial_used(conn, client_id: int) -> bool:
+    return conn.execute(
+        """SELECT 1 FROM project_request WHERE client_id=?
+           AND quota_type='trial'
+           AND verify_state IN ('verified','active') LIMIT 1""",
+        (client_id,)).fetchone() is not None
+
+
+def _domain_claimed(conn, domain: str, exclude_client: int) -> bool:
+    return conn.execute(
+        """SELECT 1 FROM project_request WHERE domain=?
+           AND verify_state IN ('verified','active')
+           AND client_id != ? LIMIT 1""",
+        (domain, exclude_client)).fetchone() is not None
+
+
+def activate_request(conn, req) -> dict:
+    """Ownership verified -> link/create the scheduler project, grant trial."""
+    trial = not _trial_used(conn, req["client_id"])
+    credits = (3 if trial else 0)
+    pr = conn.execute("SELECT id FROM project WHERE domain=?",
+                      (req["domain"],)).fetchone()
+    if pr:
+        project_id = pr["id"]
+    else:
+        conn.execute("INSERT INTO project(domain, tags_json) VALUES(?,?)",
+                     (req["domain"], req["tags_json"] or "[]"))
+        project_id = conn.execute(
+            "SELECT id FROM project WHERE domain=?",
+            (req["domain"],)).fetchone()["id"]
+    for kind, content in (("site-title", req["site_title"]),
+                          ("site-summary", req["site_summary"]),
+                          ("contact-email", req["contact_email"])):
+        if content:
+            conn.execute(
+                """INSERT INTO project_asset(project_id, kind, content, source)
+                   VALUES(?,?,?,'portal')
+                   ON CONFLICT(project_id, kind) DO UPDATE SET
+                     content=excluded.content,
+                     updated_at=datetime('now')""",
+                (project_id, kind, content))
+    conn.execute(
+        """UPDATE project_request SET verify_state='active', project_id=?,
+           quota_type=?, quota_total=?, quota_used=0 WHERE id=?""",
+        (project_id, "trial" if trial else "paid",
+         credits if trial else 0, req["id"]))
+    conn.commit()
+    return {"project_id": project_id, "trial": trial, "credits": credits}
 
 
 # --------------------------------------------------------------------------
@@ -373,8 +475,9 @@ def render_dashboard(conn, client) -> str:
                  + trend_card)
     else:
         cards = ("<div class='card'><h2>Quota consumption</h2>"
-                 "<p class='muted'>No active project yet. Self-service "
-                 "project creation with trial credits ships next "
+                 "<p class='muted'>No active project yet. "
+                 "<a href='/new'>Create your promotion project</a> — "
+                 "first verified project gets 3 trial live links "
                  "(client-portal §1.5).</p></div>"
                  "<div class='card'><h2>Promotion effect</h2>"
                  "<p class='muted'>Nothing to show yet.</p></div>")
@@ -462,6 +565,8 @@ class PortalHandler(BaseHTTPRequestHandler):
             self._page_dashboard()
         elif path == "/reports":
             self._page_reports()
+        elif path == "/new":
+            self._page_new()
         elif path == "/logout":
             tok = self._cookie("osched_session")
             if tok:
@@ -518,10 +623,7 @@ class PortalHandler(BaseHTTPRequestHandler):
         if not client:
             self._redirect("/")
             return
-        nav = ("<a href='/dashboard' style='color:inherit'>dashboard</a> "
-              "<a href='/reports' style='color:inherit'>reports</a> "
-              "<form method='post' action='/logout' style='display:inline'>"
-              "<button style='padding:2px 8px'>Log out</button></form>")
+        nav = self._nav_links()
         self._html(render_dashboard(self.conn, client),
                    title="dashboard", nav=nav)
 
@@ -530,10 +632,7 @@ class PortalHandler(BaseHTTPRequestHandler):
         if not client:
             self._redirect("/")
             return
-        nav = ("<a href='/dashboard' style='color:inherit'>dashboard</a> "
-              "<a href='/reports' style='color:inherit'>reports</a> "
-              "<form method='post' action='/logout' style='display:inline'>"
-              "<button style='padding:2px 8px'>Log out</button></form>")
+        nav = self._nav_links()
         self._html(render_reports(self.conn, client),
                    title="reports", nav=nav)
 
@@ -543,6 +642,10 @@ class PortalHandler(BaseHTTPRequestHandler):
             self._post_register()
         elif path == "/login":
             self._post_login()
+        elif path == "/new":
+            self._post_new()
+        elif path == "/verify-domain":
+            self._post_verify_domain()
         else:
             self._html("<h1>Not found</h1>", title="404")
 
@@ -603,6 +706,142 @@ class PortalHandler(BaseHTTPRequestHandler):
             return
         tok = _new_session(self.conn, row["id"])
         self._redirect("/dashboard", cookie=tok)
+
+    # -- self-service project creation (§1.5) ------------------------------
+
+    def _require_client(self):
+        return _client_from_session(self.conn,
+                                    self._cookie("osched_session"))
+
+    def _page_new(self, notice: str = ""):
+        client = self._require_client()
+        if not client:
+            self._redirect("/")
+            return
+        reqs = self.conn.execute(
+            """SELECT * FROM project_request WHERE client_id=?
+               ORDER BY created_at DESC""", (client["id"],)).fetchall()
+        req_html = ""
+        for r in reqs:
+            if r["verify_state"] == "draft":
+                snippet = (f"&lt;meta name='osched-verify' "
+                           f"content='{_esc(r['verify_token'])}'&gt;")
+                req_html += f"""
+        <div class='card'><b>{_esc(r['domain'])}</b>
+          <span class='muted'>— pending ownership verification</span>
+          <p class='muted'>Add this tag inside the <code>&lt;head&gt;</code>
+          of your site's homepage:</p>
+          <p><code>{snippet}</code></p>
+          <form method='post' action='/verify-domain'>
+            <input type='hidden' name='id' value='{r['id']}'>
+            <button type='submit'>Verify now</button>
+          </form></div>"""
+            else:
+                req_html += (f"<div class='card'><b>{_esc(r['domain'])}</b> "
+                             f"<span class='ok'>{_esc(r['verify_state'])}</span>"
+                             f" <span class='muted'>quota "
+                             f"{r['quota_used']}/{r['quota_total']} "
+                             f"({_esc(r['quota_type'])})</span></div>")
+        trial = "" if _trial_used(self.conn, client["id"]) else \
+            "<p class='ok'>First verified project gets 3 trial live links.</p>"
+        notice_html = f"<p class='warn'>{_esc(notice)}</p>" if notice else ""
+        body = f"""
+        <h1>New promotion project</h1>{notice_html}{trial}
+        <div class='card'>
+        <form method='post' action='/new'>
+          <p><input name='domain' placeholder='your-domain.com' required></p>
+          <p><input name='site_title' placeholder='site title' required></p>
+          <p><textarea name='site_summary' rows='3' style='width:100%'
+             placeholder='one-paragraph site summary'></textarea></p>
+          <p><input name='contact_email' placeholder='contact email' required></p>
+          <p><input name='tags' placeholder='tags, comma-separated (optional)'></p>
+          <p><button type='submit'>Create project</button></p>
+        </form></div>
+        <h2>Your projects</h2>{req_html or
+            "<p class='muted'>none yet</p>"}"""
+        self._html(body, title="new project",
+                   nav=self._nav_links())
+
+    @staticmethod
+    def _nav_links() -> str:
+        return ("<a href='/dashboard' style='color:inherit'>dashboard</a> "
+                "<a href='/reports' style='color:inherit'>reports</a> "
+                "<a href='/new' style='color:inherit'>new project</a> "
+                "<form method='post' action='/logout' style='display:inline'>"
+                "<button style='padding:2px 8px'>Log out</button></form>")
+
+    def _post_new(self):
+        client = self._require_client()
+        if not client:
+            self._redirect("/")
+            return
+        f = self._form()
+        domain = normalize_domain(f.get("domain"))
+        dev = os.environ.get("PORTAL_DEV") == "1"
+        err = validate_domain(domain, dev=dev)
+        if err:
+            self._page_new(notice=err)
+            return
+        if _domain_claimed(self.conn, domain, client["id"]):
+            self._page_new(notice="This domain is already claimed by "
+                                  "another account.")
+            return
+        dup = self.conn.execute(
+            "SELECT 1 FROM project_request WHERE client_id=? AND domain=?",
+            (client["id"], domain)).fetchone()
+        if dup:
+            self._page_new(notice="You already have a request for this "
+                                  "domain.")
+            return
+        tags = [t.strip() for t in (f.get("tags") or "").split(",")
+                if t.strip()]
+        token = "osched-" + secrets.token_urlsafe(16)
+        self.conn.execute(
+            """INSERT INTO project_request(client_id, domain, site_title,
+               site_summary, contact_email, tags_json, verify_method,
+               verify_token, verify_state)
+               VALUES(?,?,?,?,?,?, 'meta', ?, 'draft')""",
+            (client["id"], domain, (f.get("site_title") or "").strip(),
+             (f.get("site_summary") or "").strip(),
+             (f.get("contact_email") or "").strip(),
+             json.dumps(tags), token))
+        self.conn.commit()
+        self._page_new()
+
+    def _post_verify_domain(self):
+        client = self._require_client()
+        if not client:
+            self._redirect("/")
+            return
+        rid = (self._form().get("id") or "")
+        req = self.conn.execute(
+            """SELECT * FROM project_request WHERE id=? AND client_id=?
+               AND verify_state='draft'""",
+            (rid, client["id"])).fetchone()
+        if not req:
+            self._page_new(notice="No pending request found.")
+            return
+        if _domain_claimed(self.conn, req["domain"], client["id"]):
+            self._page_new(notice="This domain was claimed by another "
+                                  "account in the meantime.")
+            return
+        try:
+            found = fetch_meta_token(_verify_url(req["domain"]))
+        except Exception as e:  # noqa: BLE001
+            self._page_new(notice=f"Could not fetch {_esc(req['domain'])}: "
+                                  f"{_esc(str(e)[:120])}")
+            return
+        if found != req["verify_token"]:
+            self._page_new(notice="Verification tag not found on your "
+                                  "homepage — add it to <head> and retry.")
+            return
+        result = activate_request(self.conn, req)
+        note = (f"{_esc(req['domain'])} verified — project active with "
+                f"{result['credits']} trial live links."
+                if result["trial"] else
+                f"{_esc(req['domain'])} verified — project active "
+                "(trial already used on this account).")
+        self._page_new(notice=note)
 
 
 # --------------------------------------------------------------------------
