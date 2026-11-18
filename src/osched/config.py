@@ -39,6 +39,8 @@ def load_config(path: str | None = None) -> dict[str, Any]:
         if not isinstance(doc, dict):
             raise ConfigError(f"{cand}: top-level YAML must be a mapping")
         merged.update(doc)
+    cfg_dir = str(pathlib.Path(candidates[0]).resolve().parent)
+    merged["_cfg_dir"] = cfg_dir
     _validate(merged, os.path.dirname(candidates[0]))
     return merged
 

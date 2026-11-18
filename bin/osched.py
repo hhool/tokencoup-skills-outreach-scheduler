@@ -43,6 +43,7 @@ from osched import matching
 from osched import classify as classify_mod
 from osched import scheduler as sched_mod
 from osched import executor as exec_mod
+from osched import report as report_mod
 
 PROJECT_YAML_TEMPLATE = """\
 # Project config for {domain} — lives under data_root/projects/ (gitignored).
@@ -290,6 +291,17 @@ def cmd_execute(cfg: dict, domain: str, run_date: str | None,
     return 0
 
 
+def cmd_report(cfg: dict, run_date: str | None, dry_run: bool) -> int:
+    conn = connect(data_root(cfg))
+    out = report_mod.run_report(conn, cfg, cfg.get("_cfg_dir", "config"),
+                                day=run_date, dry_run=dry_run)
+    meta = {k: v for k, v in out.items() if k != "text"}
+    print("report: " + json.dumps(meta, ensure_ascii=False))
+    print()
+    print(out["text"])
+    return 0
+
+
 def cmd_stats(cfg: dict) -> int:
     conn = connect(data_root(cfg))
     rows = conn.execute(
@@ -364,6 +376,10 @@ def main(argv: list[str] | None = None) -> int:
                         help="override today (ISO date)")
     p_exec.add_argument("--dry-run", action="store_true")
     p_exec.add_argument("--limit", type=int, default=0)
+    p_rep = sub.add_parser("report", help="build (+ send) daily report (§8)")
+    p_rep.add_argument("--date", default=None, help="report date (ISO)")
+    p_rep.add_argument("--dry-run", action="store_true",
+                       help="print only, never send")
     sub.add_parser("stats", help="pool summary")
     args = ap.parse_args(argv)
 
@@ -394,6 +410,8 @@ def main(argv: list[str] | None = None) -> int:
     if args.cmd == "execute":
         return cmd_execute(cfg, args.domain, args.date, args.dry_run,
                            args.limit)
+    if args.cmd == "report":
+        return cmd_report(cfg, args.date, args.dry_run)
     if args.cmd == "stats":
         return cmd_stats(cfg)
     return 2

@@ -25,6 +25,9 @@ scheduler:
 report:
   email: ""                        # empty = no daily report email; set to enable
   smtp_env_file: config/secrets/smtp.env   # project-local, gitignored
+  # SMTP endpoint — either here or SMTP_HOST/SMTP_PORT in the env file:
+  # smtp_host: smtp.gmail.com
+  # smtp_port: 587
 
 dr:
   provider: openpagerank           # free 0-10 domain rank, 30k domains/month
