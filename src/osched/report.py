@@ -15,6 +15,8 @@ follows scheduler config; the CLI is idempotent and safe to run from cron.
 from __future__ import annotations
 
 import json
+import os
+import pathlib
 import smtplib
 import socket
 from datetime import date, datetime, timedelta
@@ -208,14 +210,37 @@ def build_report(conn, day: str | None = None) -> str:
 def _smtp_settings(cfg: dict) -> dict:
     rep = cfg.get("report", {})
     env_file = rep.get("smtp_env_file", "config/secrets/smtp.env")
+    port = int(rep.get("smtp_port") or
+               require_env_key(env_file, "SMTP_PORT") or 587)
     return {
         "env_file": env_file,
         "host": rep.get("smtp_host") or require_env_key(env_file, "SMTP_HOST"),
-        "port": int(rep.get("smtp_port") or
-                    require_env_key(env_file, "SMTP_PORT") or 587),
+        "port": port,
+        "ssl": port == 465,   # implicit-TLS port; 587 = STARTTLS
         "user": require_env_key(env_file, "SMTP_USER"),
-        "pass": require_env_key(env_file, "SMTP_PASS"),
+        # Gmail app-password convention (SMTP_APP_PASSWORD); SMTP_PASS alias.
+        "pass": _require_any(env_file, "SMTP_APP_PASSWORD", "SMTP_PASS"),
     }
+
+
+def _env_has(env_file: str, key: str) -> bool:
+    try:
+        for line in open(env_file, encoding="utf-8"):
+            if line.strip().startswith(key + "=") and \
+                    line.strip().split("=", 1)[1].strip():
+                return True
+    except OSError:
+        pass
+    return False
+
+
+def _require_any(env_file: str, *keys: str) -> str:
+    """First env key present with a non-empty value; clear error otherwise."""
+    for key in keys:
+        if _env_has(env_file, key) or os.environ.get(key, "").strip():
+            return require_env_key(env_file, key)
+    raise ConfigError(
+        f"Missing credential {' or '.join(keys)} (env or {env_file})")
 
 
 def send_report(cfg: dict, text: str, day: str) -> dict:
@@ -232,8 +257,10 @@ def send_report(cfg: dict, text: str, day: str) -> dict:
     msg["To"] = recipient
     msg["Date"] = formatdate(localtime=True)
     msg["Message-ID"] = make_msgid(domain=s["host"])
-    with smtplib.SMTP(s["host"], s["port"], timeout=30) as smtp:
-        smtp.starttls()
+    with smtplib.SMTP_SSL(s["host"], s["port"], timeout=30) if s["ssl"] \
+            else smtplib.SMTP(s["host"], s["port"], timeout=30) as smtp:
+        if not s["ssl"]:
+            smtp.starttls()
         smtp.login(s["user"], s["pass"])
         smtp.sendmail(from_addr, [recipient], msg.as_string())
     return {"sent": True, "recipient": recipient}
@@ -247,11 +274,13 @@ def run_report(conn, cfg: dict, cfg_dir: str, *, day: str | None = None,
     outcome = {"built": True, "chars": len(text)}
     if not dry_run:
         try:
-            # cfg paths are relative to the config dir, not cwd.
+            # env-file paths in YAML are relative to the repo root, which is
+            # the parent of the config dir recorded by load_config.
             saved = cfg.get("report", {}).get("smtp_env_file")
             if saved and not saved.startswith("/"):
+                repo_root = pathlib.Path(cfg.get("_cfg_dir", ".")).parent
                 cfg.setdefault("report", {})["smtp_env_file"] = \
-                    f"{cfg_dir}/{saved}"
+                    str(repo_root / saved)
             outcome.update(send_report(cfg, text, day))
         except ConfigError as e:
             outcome.update({"sent": False, "reason": f"config: {e}"})
