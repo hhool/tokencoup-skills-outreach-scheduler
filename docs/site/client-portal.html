@@ -305,7 +305,35 @@ process and the cron process are separate, sqlite WAL mode allows both.</p>
 </ol>
 <p>Open items: OAuth callback domain (needs a real domain on the fly app),
 Facebook developer app review, billing period boundary definition
-(calendar month vs rolling 30d).</p></div>
+(calendar month vs rolling 30d).</p>
+<h2>6. Deployment topology (ratified 2026-11-18)</h2>
+<p><strong>Frontend on Cloudflare Pages, backend on fly.io.</strong></p>
+<ul>
+<li><code>frontend/</code> is a static SPA (index.html + app.js + styles.css, vanilla
+  JS, no build step). Deployed via <code>wrangler pages deploy frontend
+  --project-name osched-portal</code>.</li>
+<li>The SPA calls the fly backend's JSON API (<code>/api/*</code>) cross-origin with
+  a bearer token in the <code>X-Auth-Token</code> header (localStorage). The API
+  answers with permissive CORS (<code>Access-Control-Allow-Origin: *</code>) —
+  auth is the token, not cookies, so wildcard origin is safe here.</li>
+<li>The fly app keeps serving the legacy HTML pages on the same routes as
+  a fallback; both UIs share the same API and database.</li>
+<li><code>API_BASE</code> in <code>frontend/app.js</code> is the single touch point when the
+  backend moves to a custom domain.</li>
+<li>Super-admin bootstrap: <code>PORTAL_ADMIN_EMAILS</code> (fly env) seeds the
+  <code>admin_whitelist</code> at boot; whitelist members get role=admin at
+  registration/login. Admin UI: approve requests, set quotas, manage
+  the whitelist (last-admin removal is guarded).</li>
+</ul>
+<h3>Deploy steps — frontend (Cloudflare)</h3>
+<pre><code class="language-bash">wrangler login                                   # once, interactive
+wrangler pages project create osched-portal --production-branch main
+wrangler pages deploy frontend --project-name osched-portal --branch main
+</code></pre>
+<p>Non-interactive shells need <code>CLOUDFLARE_API_TOKEN</code> (Pages: Edit).</p>
+<h3>Deploy steps — backend (fly.io)</h3>
+<p>Unchanged from docs/deployment.md, plus: the portal runs inside the
+same machine via <code>scripts/start.sh</code> (port 8080, <code>[http_service]</code>).</p></div>
 <div data-lang-en="0" style="display:none"><h1 style="display:none">客户端门户 — 注册登录与看板设计</h1><h1>客户端门户 — 注册登录与看板设计</h1>
 <p><strong>范围</strong>：商业化轨道的客户端 Web 门面。客户用邮箱注册/登录（含
 Google / Facebook OAuth），然后只看两样东西：<strong>额度消耗</strong>（套餐买了
@@ -527,7 +555,33 @@ run_log + link_verify 聚合——与 B4 profile 同一套聚合，以趋势图�
 <li>第 4 层下游流量——与被服务站点约定 UTM 规范后做。</li>
 </ol>
 <p>待定项：OAuth 回调域名（fly 应用需绑真实域名）、Facebook 开发者
-应用过审、账期边界定义（自然月 vs 滚动 30 天）。</p></div></article></main>
+应用过审、账期边界定义（自然月 vs 滚动 30 天）。</p>
+<h2>6. 部署拓扑（2026-11-18 定稿）</h2>
+<p><strong>前端 Cloudflare Pages，后台 fly.io。</strong></p>
+<ul>
+<li><code>frontend/</code> 是静态 SPA（index.html + app.js + styles.css，原生 JS，
+  无构建步骤）。部署：<code>wrangler pages deploy frontend --project-name
+  osched-portal</code>。</li>
+<li>SPA 跨域调用 fly 后端 JSON API（<code>/api/*</code>），bearer token 放
+  <code>X-Auth-Token</code> 头（localStorage）。API 返回宽松 CORS
+  （<code>Access-Control-Allow-Origin: *</code>）——鉴权靠 token 而非 cookie，
+  通配 origin 在此安全。</li>
+<li>fly 应用同时保留旧版 HTML 页面作回退；两个 UI 共用同一 API 与
+  数据库。</li>
+<li><code>frontend/app.js</code> 的 <code>API_BASE</code> 是后端换自定义域名时的唯一触点。</li>
+<li>超管引导：<code>PORTAL_ADMIN_EMAILS</code>（fly env）在启动时播种
+  <code>admin_whitelist</code>；白名单成员注册/登录即得 role=admin。管理端：
+  审批请求、设额度、管白名单（最后一个白名单条目不可移除）。</li>
+</ul>
+<h3>前端部署步骤（Cloudflare）</h3>
+<pre><code class="language-bash">wrangler login                                   # 一次，交互式
+wrangler pages project create osched-portal --production-branch main
+wrangler pages deploy frontend --project-name osched-portal --branch main
+</code></pre>
+<p>非交互 shell 需要 <code>CLOUDFLARE_API_TOKEN</code>（Pages: Edit 权限）。</p>
+<h3>后端部署步骤（fly.io）</h3>
+<p>见 docs/deployment.zh.md；门户经 <code>scripts/start.sh</code> 跑在同一台机器
+（8080 端口，<code>[http_service]</code>）。</p></div></article></main>
 <footer>bilingual docs · built from .md sources</footer>
 <script>
 (function(){

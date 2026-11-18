@@ -186,3 +186,38 @@ process and the cron process are separate, sqlite WAL mode allows both.
 Open items: OAuth callback domain (needs a real domain on the fly app),
 Facebook developer app review, billing period boundary definition
 (calendar month vs rolling 30d).
+
+## 6. Deployment topology (ratified 2026-11-18)
+
+**Frontend on Cloudflare Pages, backend on fly.io.**
+
+- `frontend/` is a static SPA (index.html + app.js + styles.css, vanilla
+  JS, no build step). Deployed via `wrangler pages deploy frontend
+  --project-name osched-portal`.
+- The SPA calls the fly backend's JSON API (`/api/*`) cross-origin with
+  a bearer token in the `X-Auth-Token` header (localStorage). The API
+  answers with permissive CORS (`Access-Control-Allow-Origin: *`) —
+  auth is the token, not cookies, so wildcard origin is safe here.
+- The fly app keeps serving the legacy HTML pages on the same routes as
+  a fallback; both UIs share the same API and database.
+- `API_BASE` in `frontend/app.js` is the single touch point when the
+  backend moves to a custom domain.
+- Super-admin bootstrap: `PORTAL_ADMIN_EMAILS` (fly env) seeds the
+  `admin_whitelist` at boot; whitelist members get role=admin at
+  registration/login. Admin UI: approve requests, set quotas, manage
+  the whitelist (last-admin removal is guarded).
+
+### Deploy steps — frontend (Cloudflare)
+
+```bash
+wrangler login                                   # once, interactive
+wrangler pages project create osched-portal --production-branch main
+wrangler pages deploy frontend --project-name osched-portal --branch main
+```
+
+Non-interactive shells need `CLOUDFLARE_API_TOKEN` (Pages: Edit).
+
+### Deploy steps — backend (fly.io)
+
+Unchanged from docs/deployment.md, plus: the portal runs inside the
+same machine via `scripts/start.sh` (port 8080, `[http_service]`).

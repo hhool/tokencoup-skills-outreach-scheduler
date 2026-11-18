@@ -165,3 +165,36 @@ run_log + link_verify 聚合——与 B4 profile 同一套聚合，以趋势图�
 
 待定项：OAuth 回调域名（fly 应用需绑真实域名）、Facebook 开发者
 应用过审、账期边界定义（自然月 vs 滚动 30 天）。
+
+## 6. 部署拓扑（2026-11-18 定稿）
+
+**前端 Cloudflare Pages，后台 fly.io。**
+
+- `frontend/` 是静态 SPA（index.html + app.js + styles.css，原生 JS，
+  无构建步骤）。部署：`wrangler pages deploy frontend --project-name
+  osched-portal`。
+- SPA 跨域调用 fly 后端 JSON API（`/api/*`），bearer token 放
+  `X-Auth-Token` 头（localStorage）。API 返回宽松 CORS
+  （`Access-Control-Allow-Origin: *`）——鉴权靠 token 而非 cookie，
+  通配 origin 在此安全。
+- fly 应用同时保留旧版 HTML 页面作回退；两个 UI 共用同一 API 与
+  数据库。
+- `frontend/app.js` 的 `API_BASE` 是后端换自定义域名时的唯一触点。
+- 超管引导：`PORTAL_ADMIN_EMAILS`（fly env）在启动时播种
+  `admin_whitelist`；白名单成员注册/登录即得 role=admin。管理端：
+  审批请求、设额度、管白名单（最后一个白名单条目不可移除）。
+
+### 前端部署步骤（Cloudflare）
+
+```bash
+wrangler login                                   # 一次，交互式
+wrangler pages project create osched-portal --production-branch main
+wrangler pages deploy frontend --project-name osched-portal --branch main
+```
+
+非交互 shell 需要 `CLOUDFLARE_API_TOKEN`（Pages: Edit 权限）。
+
+### 后端部署步骤（fly.io）
+
+见 docs/deployment.zh.md；门户经 `scripts/start.sh` 跑在同一台机器
+（8080 端口，`[http_service]`）。
