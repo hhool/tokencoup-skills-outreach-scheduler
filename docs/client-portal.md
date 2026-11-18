@@ -238,8 +238,9 @@ same machine via `scripts/start.sh` (port 8080, `[http_service]`).
   (registered 2026-11-18, Namecheap; CF zone active 22:24, Pages cert
   issued 22:29 — **live**: apex / www / `/app/` all 200)
 - frontend: https://linkattest.com (Cloudflare Pages, project
-  `osched-portal`, account ***REMOVED-CF-ACCT***…); `***REMOVED-REVOKED-DOMAIN***` stays live as
-  the trial/secondary face until a canonical redirect decision is made
+  `osched-portal`, account ***REMOVED-CF-ACCT***…); `***REMOVED-REVOKED-DOMAIN***` was **revoked**
+  2026-11-18 (Pages custom domains detached, DNS records deleted, no
+  redirect) — linkattest.com is the single frontend face
 - backend API: https://tokencoup-skills-outreach-scheduler.fly.dev/api/*
   (fly dedicated ingress v4 ***REMOVED-FLY-IPV4*** / v6 ***REMOVED-FLY-IPV6***;
   these fixed IPs are also the OPR key rebinding target)

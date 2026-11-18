@@ -965,7 +965,7 @@ class PortalHandler(BaseHTTPRequestHandler):
             (uid, client_id, code))
         conn.commit()
         self._api_send({
-            "url": "https://***REMOVED-REVOKED-DOMAIN***/privacy.html",
+            "url": "https://linkattest.com/privacy",
             "confirmation_code": code,
         })
 

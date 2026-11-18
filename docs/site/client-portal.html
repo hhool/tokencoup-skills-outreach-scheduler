@@ -350,8 +350,9 @@ same machine via <code>scripts/start.sh</code> (port 8080, <code>[http_service]<
   (registered 2026-11-18, Namecheap; CF zone active 22:24, Pages cert
   issued 22:29 — <strong>live</strong>: apex / www / <code>/app/</code> all 200)</li>
 <li>frontend: https://linkattest.com (Cloudflare Pages, project
-  <code>osched-portal</code>, account ***REMOVED-CF-ACCT***…); <code>***REMOVED-REVOKED-DOMAIN***</code> stays live as
-  the trial/secondary face until a canonical redirect decision is made</li>
+  <code>osched-portal</code>, account ***REMOVED-CF-ACCT***…); <code>***REMOVED-REVOKED-DOMAIN***</code> was <strong>revoked</strong>
+  2026-11-18 (Pages custom domains detached, DNS records deleted, no
+  redirect) — linkattest.com is the single frontend face</li>
 <li>backend API: https://tokencoup-skills-outreach-scheduler.fly.dev/api/*
   (fly dedicated ingress v4 ***REMOVED-FLY-IPV4*** / v6 ***REMOVED-FLY-IPV6***;
   these fixed IPs are also the OPR key rebinding target)</li>
@@ -672,8 +673,9 @@ wrangler pages deploy frontend --project-name osched-portal --branch main
   CF zone 22:24 active、Pages 证书 22:29 签发——<strong>已上线</strong>：
   apex / www / <code>/app/</code> 全部 200）</li>
 <li>前端：https://linkattest.com（Cloudflare Pages，项目 <code>osched-portal</code>，
-  账号 ***REMOVED-CF-ACCT***…）；<code>***REMOVED-REVOKED-DOMAIN***</code> 保留为试用/副面，直到决定
-  是否做 canonical 跳转</li>
+  账号 ***REMOVED-CF-ACCT***…）；<code>***REMOVED-REVOKED-DOMAIN***</code> 已于 2026-11-18 <strong>撤销</strong>
+  （解绑 Pages 自定义域、删除 DNS 记录、不做 301）——linkattest.com
+  是唯一前端面</li>
 <li>后端 API：https://tokencoup-skills-outreach-scheduler.fly.dev/api/*
   （fly 专用入口 v4 ***REMOVED-FLY-IPV4*** / v6 ***REMOVED-FLY-IPV6***；
   这两个固定 IP 同时是 OPR key 改绑目标）</li>
