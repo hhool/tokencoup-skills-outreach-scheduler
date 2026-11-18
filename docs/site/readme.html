@@ -1,0 +1,235 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="day">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>outreach-scheduler — outreach-scheduler docs</title>
+<style>
+:root[data-theme="day"] {
+  --bg:#f7f7f5; --panel:#ffffff; --text:#1a1a1a; --muted:#6b6b6b;
+  --border:#dcdcd8; --accent:#2563eb; --code-bg:#f1f1ee; --link:#2563eb;
+}
+:root[data-theme="night"] {
+  --bg:#121417; --panel:#1c1f24; --text:#e4e6ea; --muted:#9aa0a8;
+  --border:#2e333a; --accent:#7aa2f7; --code-bg:#23272e; --link:#7aa2f7;
+}
+* { box-sizing:border-box; }
+body { margin:0; font-family:-apple-system,'Segoe UI','PingFang SC','Microsoft YaHei',sans-serif;
+  background:var(--bg); color:var(--text); line-height:1.65; }
+header { position:sticky; top:0; z-index:10; background:var(--panel);
+  border-bottom:1px solid var(--border); padding:10px 18px;
+  display:flex; align-items:center; gap:14px; flex-wrap:wrap; }
+header .brand { font-weight:700; letter-spacing:.2px; text-decoration:none; color:var(--text); }
+header nav { display:flex; gap:4px; flex-wrap:wrap; flex:1; }
+header nav a { padding:4px 10px; border-radius:6px; text-decoration:none;
+  color:var(--muted); font-size:14px; }
+header nav a:hover { background:var(--code-bg); color:var(--text); }
+header nav a.active { background:var(--accent); color:#fff; }
+.toggles { display:flex; gap:8px; }
+.toggles button { cursor:pointer; border:1px solid var(--border); background:var(--panel);
+  color:var(--text); border-radius:6px; padding:4px 10px; font-size:13px; }
+.toggles button:hover { background:var(--code-bg); }
+main { max-width:880px; margin:0 auto; padding:28px 18px 80px; }
+article { background:var(--panel); border:1px solid var(--border); border-radius:10px;
+  padding:28px 32px; }
+h1,h2,h3,h4 { line-height:1.3; color:var(--text); }
+a { color:var(--link); }
+code { background:var(--code-bg); padding:2px 5px; border-radius:4px;
+  font-size:.92em; font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace; }
+pre { background:var(--code-bg); padding:14px 16px; border-radius:8px;
+  overflow-x:auto; border:1px solid var(--border); }
+pre code { background:none; padding:0; }
+table { border-collapse:collapse; width:100%; margin:14px 0; font-size:.94em; }
+th,td { border:1px solid var(--border); padding:7px 10px; text-align:left; }
+th { background:var(--code-bg); }
+blockquote { border-left:3px solid var(--accent); margin:14px 0; padding:4px 16px;
+  color:var(--muted); }
+hr { border:none; border-top:1px solid var(--border); margin:26px 0; }
+footer { text-align:center; color:var(--muted); font-size:13px; padding:20px; }
+</style>
+</head>
+<body>
+<header>
+  <a class="brand" href="index.html">outreach-scheduler</a>
+  <nav><a href="readme.html" class="active" data-en="Overview" data-zh="概览">Overview</a>
+  <a href="business.html" data-en="Business" data-zh="业务层">Business</a>
+  <a href="client-intake.html" data-en="Client Intake" data-zh="客户接入">Client Intake</a>
+  <a href="deployment.html" data-en="Deployment" data-zh="部署">Deployment</a>
+  <a href="operations.html" data-en="Operations" data-zh="运维">Operations</a>
+  <a href="design.html" data-en="Design" data-zh="设计">Design</a></nav>
+  <div class="toggles">
+    <button id="lang" type="button">中文</button>
+    <button id="theme" type="button">夜视</button>
+  </div>
+</header>
+<main><article><div data-lang-en="1"><h1 style="display:none">outreach-scheduler</h1><h1>outreach-scheduler</h1>
+<p>Backlink outreach planning &amp; scheduling system. Import harvested link data
+(WDC competitor-link products + similar datasets), build a classified pool,
+match projects by domain, generate configurable send plans, run them on a
+periodic schedule, and email a daily report.</p>
+<p>Chinese version: see <code>README.zh.md</code>.</p>
+<p><strong>Status: functional layer shipped — import → probe → classify → match
+(human gate) → schedule → execute (HTTP form + CUA channel + wave2 SMTP)
+→ daily report, with cron wiring. See <code>DESIGN.md</code> for architecture and
+<a href="docs/README.md">docs</a> for operations &amp; the business roadmap.</strong></p>
+<h2>Hard rules</h2>
+<ol>
+<li><strong>User data never enters the repo.</strong> <code>data/</code>, <code>*.env</code>, <code>config/secrets*</code> are
+   gitignored; <code>data_root</code> may point outside the repo — but only to a folder
+   named after this project (e.g. <code>~/outreach-scheduler-data/</code>). Paths never
+   reference other private folders. GitHub carries source code only.</li>
+<li><strong>No external-toolchain dependency.</strong> Python3 stdlib + PyYAML + requests
+   only; reads external <em>product files</em>, imports nothing from other systems.</li>
+<li><strong>Captcha solving is CUA-first and free.</strong> Real-Chrome automation solves
+   image/stealth challenges; paid solvers are optional and default-off.</li>
+<li><strong>Pre-commit private scan.</strong> <code>python3 tools/private_scan.py</code> must pass
+   before every commit; any hit blocks the commit (emails, passwords, private
+   domains, private folder names, <code>~/</code> dot-folder and absolute home paths).</li>
+<li><strong>Doc language.</strong> English-primary <code>.md</code>; Chinese translations in <code>.zh.md</code>.</li>
+</ol>
+<h2>Layout</h2>
+<pre><code>bin/osched.py            CLI: import / probe / project / match / queue /
+                         confirm / reject / classify / dr / schedule / plan /
+                         execute / cua / verify / report / client-report /
+                         account / mail-verify / account-activate /
+                         profile / overview / asset / stats
+config/global.example.yaml   config template — copy to config/global.yaml
+src/osched/
+  config.py              YAML config + env-file credentials, fail-fast
+  models.py              SourceRecord — unified import model (DESIGN.md §4b)
+  adapters/base.py       SourceAdapter abstract interface (read-only, lazy)
+  adapters/wdc.py        wdc_competitor_links adapter
+  db.py                  SQLite schema: pool/project/match/plan/run_log/
+                         probe_cache/project_asset
+  pool.py                import pipeline (dedupe by domain+url)
+  probe.py               HTTP probe: submit endpoints, captcha typing, cache
+  classify.py            site/submit type, wave &amp; category rules, DR enrich
+  matching.py            scoring, project config, landing-URL selection
+  scheduler.py           dated plan generation + due_today worklist
+  executor.py            plan execution: wave1 HTTP, captcha routing, wave2 SMTP
+  cua.py                 CUA channel: real-Chrome captcha-class submission
+  verify.py              live-link re-visit ledger (B1)
+  report.py              five-section daily report (§8)
+  client_report.py       client-facing periodic report (B2)
+  accounts.py            directory account ledger + IMAP verification-mail fetch (B3)
+  profile.py             per-domain submittability profile &amp; suggestions (B4)
+  ops.py                 multi-client operations view + SLA alerts (B5)
+tools/private_scan.py    private-information pre-commit gate
+import/                  baseline WDC harvest code (copied as-is; see import/README.md)
+scripts/daily.sh         cron entry: pipeline &amp; run segments
+docs/                    client-intake / operations / business roadmap (see docs/README.md)
+</code></pre>
+<h2>Quick start</h2>
+<pre><code class="language-bash">cp config/global.example.yaml config/global.yaml   # then edit paths
+python3 bin/osched.py import                        # adapters -&gt; pool
+python3 bin/osched.py stats                         # pool summary
+</code></pre>
+<p>Full loop: <code>docs/operations.md</code> (cron) · <code>docs/client-intake.md</code>
+(onboarding) · <code>docs/business.md</code> (what to build next).</p>
+<h2>Roadmap (DESIGN.md §10)</h2>
+<ul>
+<li>[x] Phase 2: probe (entry/form/captcha-type/contact detection) + classify</li>
+<li>[x] Phase 3: project matching + human confirmation queue</li>
+<li>[x] Phase 4: plan scheduler + wave1 form submit (HTTP-first) + wave2 SMTP</li>
+<li>[x] Phase 5: daily report email; DR via Open PageRank (free tier)</li>
+<li>Next: business layer B1–B6 (commercialization) — see docs/business.md</li>
+</ul></div>
+<div data-lang-en="0" style="display:none"><h1 style="display:none">outreach-scheduler</h1><h1>outreach-scheduler</h1>
+<p>外链外联计划调度中心：导入收割外链数据（WDC 竞品反链产物 + 同类数据）→ 池化分类 → 项目匹配 → 可配置发送计划 → 周期执行 → 每日邮件汇报。</p>
+<p>英文版见 <code>README.md</code>。</p>
+<p><strong>状态：功能层已交付——import → probe → classify → match（人工闸）→
+schedule → execute（HTTP 表单 + CUA 通道 + wave2 SMTP）→ 日报，含 cron
+接线。架构见 <code>DESIGN.zh.md</code>，运维与业务路线图见 <a href="docs/README.zh.md">docs</a>。</strong></p>
+<h2>硬规则</h2>
+<ol>
+<li><strong>用户数据永不进仓库。</strong> <code>data/</code>、<code>*.env</code>、<code>config/secrets*</code> 全部 gitignore；<code>data_root</code> 可指向仓库外——但只允许以本项目命名的文件夹（如 <code>~/outreach-scheduler-data/</code>），路径不得涉及其他私人文件夹。GitHub 只有源码。</li>
+<li><strong>无外部工具链依赖。</strong> 仅 Python3 标准库 + PyYAML + requests；只读外部产物文件，不 import 任何现有系统。</li>
+<li><strong>验证码走 CUA 免费通道。</strong> 本机真实 Chrome 自动完成图像/隐形挑战；付费打码可选、默认关闭。</li>
+<li><strong>提交前必跑私有扫描。</strong> <code>python3 tools/private_scan.py</code> 必须通过，命中即拒绝提交（邮箱、密码、私有域名、私有文件夹名、<code>~/</code> 点目录与绝对家目录路径）。</li>
+<li><strong>文档语言规范。</strong> 英文主文档 <code>.md</code>；中文翻译 <code>.zh.md</code>。</li>
+</ol>
+<h2>目录结构</h2>
+<pre><code>bin/osched.py            CLI：import / probe / project / match / queue /
+                         confirm / reject / classify / dr / schedule / plan /
+                         execute / cua / verify / report / client-report /
+                         account / mail-verify / account-activate /
+                         profile / overview / asset / stats
+config/global.example.yaml   配置模板——复制为 config/global.yaml
+src/osched/
+  config.py              YAML 配置 + env 凭据，fail-fast
+  models.py              SourceRecord——统一导入模型（DESIGN.zh.md §4b）
+  adapters/base.py       SourceAdapter 抽象接口（只读、惰性）
+  adapters/wdc.py        wdc_competitor_links 适配器
+  db.py                  SQLite 七表：pool/project/match/plan/run_log/
+                         probe_cache/project_asset
+  pool.py                导入管线（按 domain+url 去重）
+  probe.py               HTTP 探测：提交入口、验证码识别、probe_cache
+  classify.py            站点/提交类型、wave 与分类规则、DR 富化
+  matching.py            打分、项目配置、落地 URL 选择
+  scheduler.py           计划排期生成 + due_today 工作清单
+  executor.py            计划执行：wave1 HTTP、验证码路由、wave2 SMTP
+  cua.py                 CUA 通道：真实 Chrome 处理验证码类提交
+  verify.py              实链回访台账（B1）
+  report.py              五段式日报（§8）
+  client_report.py       客户周期报告（B2）
+  accounts.py            目录账号台账 + IMAP 收验证信（B3）
+  profile.py             每域名可投递性画像与处置建议（B4）
+  ops.py                 多客户运营视图 + SLA 告警（B5）
+tools/private_scan.py    私有信息提交前扫描闸
+import/                  WDC 收割基线代码（原样复制；见 import/README.zh.md）
+scripts/daily.sh         cron 入口：pipeline / run 两段
+docs/                    接单 / 运维 / 业务路线图（见 docs/README.zh.md）
+</code></pre>
+<h2>快速开始</h2>
+<pre><code class="language-bash">cp config/global.example.yaml config/global.yaml   # 然后改路径
+python3 bin/osched.py import                        # 适配器 -&gt; 池
+python3 bin/osched.py stats                         # 池摘要
+</code></pre>
+<p>全流程：<code>docs/operations.zh.md</code>（cron）· <code>docs/client-intake.zh.md</code>
+（接单）· <code>docs/business.zh.md</code>（下一步做什么）。</p>
+<h2>路线图（DESIGN.zh.md §10）</h2>
+<ul>
+<li>[x] Phase 2：探测（入口/表单/验证码类型/联系邮箱识别）+ 分类</li>
+<li>[x] Phase 3：项目匹配 + 人工确认队列</li>
+<li>[x] Phase 4：排期执行器 + wave1 表单直投（HTTP 优先）+ wave2 SMTP</li>
+<li>[x] Phase 5：每日邮件汇报；DR 用 Open PageRank 免费层</li>
+<li>下一阶段：业务层 B1–B6（商业化落地）——见 docs/business.zh.md</li>
+</ul></div></article></main>
+<footer>bilingual docs · built from .md sources</footer>
+<script>
+(function(){
+  var root=document.documentElement;
+  var langBtn=document.getElementById('lang'), themeBtn=document.getElementById('theme');
+  function setLang(l){
+    root.setAttribute('data-lang',l);
+    document.querySelectorAll('[data-lang-en]').forEach(function(el){
+      el.style.display = (el.getAttribute('data-lang-en')==='1') === (l==='en') ? '' : 'none';
+    });
+    localStorage.setItem('docs-lang',l);
+    langBtn.textContent = l==='en' ? '中文' : 'English';
+    document.title = document.querySelector(l==='en'?'[data-lang-en="1"] h1':'[data-lang-en="0"] h1')
+      ? (document.querySelector(l==='en'?'[data-lang-en="1"] h1':'[data-lang-en="0"] h1').textContent + ' — outreach-scheduler docs')
+      : document.title;
+    if(window.location.pathname.endsWith('index.html')){
+      document.querySelectorAll('nav a').forEach(function(a){
+        a.textContent = l==='en' ? a.getAttribute('data-en') : a.getAttribute('data-zh');
+      });
+    }
+  }
+  function setTheme(t){
+    root.setAttribute('data-theme',t);
+    localStorage.setItem('docs-theme',t);
+    themeBtn.textContent = t==='day' ? '夜视' : '白天';
+  }
+  langBtn.addEventListener('click',function(){
+    setLang(root.getAttribute('data-lang')==='en'?'zh':'en');
+  });
+  themeBtn.addEventListener('click',function(){
+    setTheme(root.getAttribute('data-theme')==='day'?'night':'day');
+  });
+  setTheme(localStorage.getItem('docs-theme')||'day');
+  setLang(localStorage.getItem('docs-lang')||'en');
+})();
+</script>
+</body>
+</html>

@@ -1,0 +1,380 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="day">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Deployment — fly.io background operation (no agent, no desktop needed) — outreach-scheduler docs</title>
+<style>
+:root[data-theme="day"] {
+  --bg:#f7f7f5; --panel:#ffffff; --text:#1a1a1a; --muted:#6b6b6b;
+  --border:#dcdcd8; --accent:#2563eb; --code-bg:#f1f1ee; --link:#2563eb;
+}
+:root[data-theme="night"] {
+  --bg:#121417; --panel:#1c1f24; --text:#e4e6ea; --muted:#9aa0a8;
+  --border:#2e333a; --accent:#7aa2f7; --code-bg:#23272e; --link:#7aa2f7;
+}
+* { box-sizing:border-box; }
+body { margin:0; font-family:-apple-system,'Segoe UI','PingFang SC','Microsoft YaHei',sans-serif;
+  background:var(--bg); color:var(--text); line-height:1.65; }
+header { position:sticky; top:0; z-index:10; background:var(--panel);
+  border-bottom:1px solid var(--border); padding:10px 18px;
+  display:flex; align-items:center; gap:14px; flex-wrap:wrap; }
+header .brand { font-weight:700; letter-spacing:.2px; text-decoration:none; color:var(--text); }
+header nav { display:flex; gap:4px; flex-wrap:wrap; flex:1; }
+header nav a { padding:4px 10px; border-radius:6px; text-decoration:none;
+  color:var(--muted); font-size:14px; }
+header nav a:hover { background:var(--code-bg); color:var(--text); }
+header nav a.active { background:var(--accent); color:#fff; }
+.toggles { display:flex; gap:8px; }
+.toggles button { cursor:pointer; border:1px solid var(--border); background:var(--panel);
+  color:var(--text); border-radius:6px; padding:4px 10px; font-size:13px; }
+.toggles button:hover { background:var(--code-bg); }
+main { max-width:880px; margin:0 auto; padding:28px 18px 80px; }
+article { background:var(--panel); border:1px solid var(--border); border-radius:10px;
+  padding:28px 32px; }
+h1,h2,h3,h4 { line-height:1.3; color:var(--text); }
+a { color:var(--link); }
+code { background:var(--code-bg); padding:2px 5px; border-radius:4px;
+  font-size:.92em; font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace; }
+pre { background:var(--code-bg); padding:14px 16px; border-radius:8px;
+  overflow-x:auto; border:1px solid var(--border); }
+pre code { background:none; padding:0; }
+table { border-collapse:collapse; width:100%; margin:14px 0; font-size:.94em; }
+th,td { border:1px solid var(--border); padding:7px 10px; text-align:left; }
+th { background:var(--code-bg); }
+blockquote { border-left:3px solid var(--accent); margin:14px 0; padding:4px 16px;
+  color:var(--muted); }
+hr { border:none; border-top:1px solid var(--border); margin:26px 0; }
+footer { text-align:center; color:var(--muted); font-size:13px; padding:20px; }
+</style>
+</head>
+<body>
+<header>
+  <a class="brand" href="index.html">outreach-scheduler</a>
+  <nav><a href="readme.html" data-en="Overview" data-zh="概览">Overview</a>
+  <a href="business.html" data-en="Business" data-zh="业务层">Business</a>
+  <a href="client-intake.html" data-en="Client Intake" data-zh="客户接入">Client Intake</a>
+  <a href="deployment.html" class="active" data-en="Deployment" data-zh="部署">Deployment</a>
+  <a href="operations.html" data-en="Operations" data-zh="运维">Operations</a>
+  <a href="design.html" data-en="Design" data-zh="设计">Design</a></nav>
+  <div class="toggles">
+    <button id="lang" type="button">中文</button>
+    <button id="theme" type="button">夜视</button>
+  </div>
+</header>
+<main><article><div data-lang-en="1"><h1 style="display:none">Deployment — fly.io background operation (no agent, no desktop needed)</h1><h1>Deployment — fly.io background operation (no agent, no desktop needed)</h1>
+<p>The scheduler is a plain CLI + cron system. It runs wherever a Python 3.12
+and a volume exist. This page covers the fly.io server deployment; the
+desktop keeps exactly one duty (see the matrix below).</p>
+<h2>What runs where</h2>
+<table>
+<thead>
+<tr>
+<th>duty</th>
+<th>fly.io server</th>
+<th>local desktop</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>import → probe → classify → dr → match → schedule</td>
+<td>✅ (pipeline cron)</td>
+<td>optional</td>
+</tr>
+<tr>
+<td>execute (wave1 HTTP form)</td>
+<td>✅</td>
+<td>optional</td>
+</tr>
+<tr>
+<td>verify (B1 live-link re-visit)</td>
+<td>✅</td>
+<td>optional</td>
+</tr>
+<tr>
+<td>mail-verify (B3 IMAP)</td>
+<td>✅</td>
+<td>optional</td>
+</tr>
+<tr>
+<td>report + client-report (B2 email)</td>
+<td>✅</td>
+<td>optional</td>
+</tr>
+<tr>
+<td>overview / profile / queue CLI</td>
+<td>✅</td>
+<td>optional</td>
+</tr>
+<tr>
+<td><strong>cua (browser captcha, real Chrome)</strong></td>
+<td>❌ skipped automatically</td>
+<td>✅ required</td>
+</tr>
+<tr>
+<td><strong>account-activate (B3 CUA click)</strong></td>
+<td>❌ skipped automatically</td>
+<td>✅ required</td>
+</tr>
+</tbody>
+</table>
+<p>The CUA guard in <code>scripts/daily.sh</code> detects Chrome and silently skips on
+servers; state='cua' plans stay queued and are processed by a local pass
+(<code>osched cua &lt;project&gt; --headless</code>) on any machine that has Chrome. The
+data volume can be rsynced back for a local CUA pass, or run the local
+daily.sh against the same volume over a mounted share.</p>
+<p><strong>CUA-on-desktop is the ratified near-term approach</strong> (2026-11-18): it
+serves the current sites today and is acceptable for early-stage
+commercial operation. The long-term plan is to replace it with an
+open-source or commercial captcha/submission solution once volume
+justifies it — the executor's captcha-tier routing (§7.1) is the only
+touch point, so swapping the channel is config-plus-one-module work.</p>
+<h2>Deploy steps</h2>
+<pre><code class="language-bash">cd outreach-scheduler
+cp fly.toml.example fly.toml          # set your app name + region
+fly volumes create osched_data --size 1 --region hkg
+fly deploy
+
+# config (never committed: contains client mailbox addresses).
+# OSCHED_CONFIG env in fly.toml points the CLI at the volume copy.
+fly ssh sftp shell -C &quot;mkdir -p /data/config&quot;
+fly ssh sftp put config/global.yaml /data/config/global.yaml --app &lt;app&gt;
+
+# data snapshot (pool.sqlite3, projects/, sources/) — 55k pool ships as
+# a ~5MB tar.gz; re-upload after local runs to sync results:
+#   tar czf /tmp/osched-pool.tgz -C data pool.sqlite3
+#   fly ssh sftp put /tmp/osched-pool.tgz /tmp/osched-pool.tgz --app &lt;app&gt;
+#   fly ssh console -C &quot;sh -c 'cd /data &amp;&amp; tar xzf /tmp/osched-pool.tgz &amp;&amp; rm /tmp/osched-pool.tgz'&quot;
+# (note: `fly ssh sftp shell -C &quot;put …&quot;` silently no-ops — use `sftp put`;
+#  inside `ssh console -C` always wrap compound commands in `sh -c '…'`.)
+
+# secrets — os.environ wins over env files (require_env_key order)
+# set the same key set as config/secrets/smtp.env.example (SMTP host/
+# port/user, the Gmail app-password key, IMAP host/port, optional OPR
+# key) via `fly secrets` — the Gmail app-password value comes from the
+# Google account app-passwords page, never from any repo file.
+
+# verify
+fly ssh console -C &quot;ls /data &amp;&amp; scripts/daily.sh run&quot;
+</code></pre>
+<p>Notes:
+- <strong>OPR IP binding</strong>: the Open PageRank free key is bound to one IP. A fly
+  region egress IP is stable per app, so rebind once to the fly IP and the
+  monthly batch enrichment finally works unattended (currently on hold).
+- <strong>Gmail from a datacenter IP</strong>: first sends may hit Google's "suspicious
+  sign-in" heuristics; the app-password flow usually passes, otherwise
+  send report from a local run until trusted.
+- Timezone: set <code>TZ</code> in fly.toml so cron hours mean what you expect.</p>
+<h2>Agent-free operation (ratified 2026-11-18)</h2>
+<p>The whole system is CLI + cron + sqlite. Zero assistant-platform
+dependency: no MCP, no session state, no platform-owned paths. Anything
+that can run <code>python3 bin/osched.py …</code> on a cron schedule is a complete
+deployment.</p>
+<h2>AI layer hook points (later phase, ratified direction)</h2>
+<p>The backend will add AI for client work (requirement/case matching,
+planning, capability matching). The stable contracts an AI layer plugs
+into are already in place:</p>
+<table>
+<thead>
+<tr>
+<th>AI capability</th>
+<th>existing contract it plugs into</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>client intake parsing (domain, TDK, assets from free text)</td>
+<td><code>project</code> YAML + <code>asset</code> CLI + §5a assets</td>
+</tr>
+<tr>
+<td>plan drafting / outreach copy</td>
+<td><code>templates</code> chain (project → data_root → generic), wave2 result_note carries <code>template</code></td>
+</tr>
+<tr>
+<td>site selection judgement</td>
+<td><code>match</code> scoring + pending queue (<code>confirm</code>/<code>reject</code> CLI is the human gate)</td>
+</tr>
+<tr>
+<td>ops narration (client-facing summaries)</td>
+<td><code>run_log</code> + <code>client_report.py</code> section builders</td>
+</tr>
+<tr>
+<td>capability queries ("what can you do for X")</td>
+<td><code>overview</code>/<code>profile</code>/<code>queue</code> JSON-able outputs</td>
+</tr>
+</tbody>
+</table>
+<p>Design rule: AI is a caller of the CLI/DB contracts, never a bypass of the
+human gates (confirm, captcha escalate, R-520 manual send).</p></div>
+<div data-lang-en="0" style="display:none"><h1 style="display:none">部署 — fly.io 后台运行（无智能体、无桌面依赖）</h1><h1>部署 — fly.io 后台运行（无智能体、无桌面依赖）</h1>
+<p>本系统是纯 CLI + cron + sqlite，任何有 Python 3.12 和持久卷的机器都能跑。
+本文覆盖 fly.io 服务器部署；桌面机只保留一项职责（见矩阵）。</p>
+<h2>职责矩阵</h2>
+<table>
+<thead>
+<tr>
+<th>职责</th>
+<th>fly.io 服务器</th>
+<th>本地桌面</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>import → probe → classify → dr → match → schedule</td>
+<td>✅（pipeline cron）</td>
+<td>可选</td>
+</tr>
+<tr>
+<td>execute（wave1 HTTP 表单）</td>
+<td>✅</td>
+<td>可选</td>
+</tr>
+<tr>
+<td>verify（B1 实链回访）</td>
+<td>✅</td>
+<td>可选</td>
+</tr>
+<tr>
+<td>mail-verify（B3 IMAP 收信）</td>
+<td>✅</td>
+<td>可选</td>
+</tr>
+<tr>
+<td>report + client-report（B2 邮件）</td>
+<td>✅</td>
+<td>可选</td>
+</tr>
+<tr>
+<td>overview / profile / queue 命令</td>
+<td>✅</td>
+<td>可选</td>
+</tr>
+<tr>
+<td><strong>cua（浏览器验证码，真实 Chrome）</strong></td>
+<td>❌ 自动跳过</td>
+<td>✅ 必须</td>
+</tr>
+<tr>
+<td><strong>account-activate（B3 CUA 点击）</strong></td>
+<td>❌ 自动跳过</td>
+<td>✅ 必须</td>
+</tr>
+</tbody>
+</table>
+<p><code>scripts/daily.sh</code> 里的 CUA 守卫会探测 Chrome，服务器上静默跳过；
+state='cua' 计划留在队列，由有 Chrome 的本地机跑
+<code>osched cua &lt;project&gt; --headless</code> 处理。数据卷可 rsync 回本地做 CUA 轮，
+或本地 daily.sh 挂载同一卷运行。</p>
+<p><strong>CUA 留本地是已拍板的近期方案</strong>（2026-11-18）：先服务现有站点，商业
+初期可接受；后期视量级替换为开源或商用验证码/提交方案——执行器只有
+§7.1 验证码分级路由这一个接触点，换通道 = 改配置 + 一个模块。</p>
+<h2>部署步骤</h2>
+<pre><code class="language-bash">cd outreach-scheduler
+cp fly.toml.example fly.toml          # 改 app 名与 region
+fly volumes create osched_data --size 1 --region hkg
+fly deploy
+
+# 配置（不入仓库：含客户邮箱）。fly.toml 里 OSCHED_CONFIG 指向卷上副本。
+fly ssh sftp shell -C &quot;mkdir -p /data/config&quot;
+fly ssh sftp put config/global.yaml /data/config/global.yaml --app &lt;app&gt;
+
+# 数据快照（pool.sqlite3、projects/、sources/）——55k 池压包约 5MB；
+# 本地跑完要同步结果时重传：
+#   tar czf /tmp/osched-pool.tgz -C data pool.sqlite3
+#   fly ssh sftp put /tmp/osched-pool.tgz /tmp/osched-pool.tgz --app &lt;app&gt;
+#   fly ssh console -C &quot;sh -c 'cd /data &amp;&amp; tar xzf /tmp/osched-pool.tgz &amp;&amp; rm /tmp/osched-pool.tgz'&quot;
+# （注意：`fly ssh sftp shell -C &quot;put …&quot;` 会静默不动——用 `sftp put`；
+#  `ssh console -C` 里复合命令必须包一层 `sh -c '…'`。）
+
+# 密钥——os.environ 优先于 env 文件（require_env_key 顺序）
+# 键集合与 config/secrets/smtp.env.example 相同（SMTP 主机/端口/用户、
+# Gmail 应用密码键、IMAP 主机/端口、可选 OPR key），用 `fly secrets`
+# 设置；Gmail 应用密码的值来自 Google 账号的应用密码页，绝不来自仓库
+# 任何文件。
+
+# 验证
+fly ssh console -C &quot;ls /data &amp;&amp; scripts/daily.sh run&quot;
+</code></pre>
+<p>注意：
+- <strong>OPR IP 绑定</strong>：免费 key 绑单 IP。fly region 出口 IP 对同一 app 是
+  稳定的，改绑一次到 fly IP 后，月度批量富化即可无人值守（当前暂挂）。
+- <strong>数据中心 IP 发 Gmail</strong>：首次发送可能触发 Google 可疑登录拦截；
+  应用密码通常可过，否则先由本地跑 report 直到信任建立。
+- 时区：fly.toml 里设 <code>TZ</code>，cron 时刻按预期含义执行。</p>
+<h2>脱离智能体运行（2026-11-18 拍板）</h2>
+<p>全系统 = CLI + cron + sqlite，任何环节都无智能体平台依赖：无 MCP、
+无平台路径、无会话状态。凡能按 cron 跑
+<code>python3 bin/osched.py …</code> 的环境即是完整部署。</p>
+<h2>AI 层挂接点（后期，方向已拍板）</h2>
+<p>后台将加入 AI 用于客户业务（需求/案例对接、策划、能力对接）。AI 层
+插入的稳定契约已就位：</p>
+<table>
+<thead>
+<tr>
+<th>AI 能力</th>
+<th>挂接的现有契约</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>客户接单解析（自由文本 → 域名/TDK/资产）</td>
+<td>project YAML + <code>asset</code> CLI + §5a 资产</td>
+</tr>
+<tr>
+<td>计划起草 / 外联文案</td>
+<td>templates 链（项目 → data_root → 通用），wave2 result_note 带 template</td>
+</tr>
+<tr>
+<td>站点选择判断</td>
+<td>match 打分 + pending 队列（<code>confirm</code>/<code>reject</code> 是人工闸）</td>
+</tr>
+<tr>
+<td>运营叙述（客户侧摘要）</td>
+<td>run_log + client_report.py 分节构造器</td>
+</tr>
+<tr>
+<td>能力查询（"能为 X 做什么"）</td>
+<td>overview / profile / queue 的 JSON 可读输出</td>
+</tr>
+</tbody>
+</table>
+<p>设计规则：AI 只作为 CLI/DB 契约的调用方，绝不绕过人工闸
+（confirm、验证码 escalate、R-520 人工发送）。</p></div></article></main>
+<footer>bilingual docs · built from .md sources</footer>
+<script>
+(function(){
+  var root=document.documentElement;
+  var langBtn=document.getElementById('lang'), themeBtn=document.getElementById('theme');
+  function setLang(l){
+    root.setAttribute('data-lang',l);
+    document.querySelectorAll('[data-lang-en]').forEach(function(el){
+      el.style.display = (el.getAttribute('data-lang-en')==='1') === (l==='en') ? '' : 'none';
+    });
+    localStorage.setItem('docs-lang',l);
+    langBtn.textContent = l==='en' ? '中文' : 'English';
+    document.title = document.querySelector(l==='en'?'[data-lang-en="1"] h1':'[data-lang-en="0"] h1')
+      ? (document.querySelector(l==='en'?'[data-lang-en="1"] h1':'[data-lang-en="0"] h1').textContent + ' — outreach-scheduler docs')
+      : document.title;
+    if(window.location.pathname.endsWith('index.html')){
+      document.querySelectorAll('nav a').forEach(function(a){
+        a.textContent = l==='en' ? a.getAttribute('data-en') : a.getAttribute('data-zh');
+      });
+    }
+  }
+  function setTheme(t){
+    root.setAttribute('data-theme',t);
+    localStorage.setItem('docs-theme',t);
+    themeBtn.textContent = t==='day' ? '夜视' : '白天';
+  }
+  langBtn.addEventListener('click',function(){
+    setLang(root.getAttribute('data-lang')==='en'?'zh':'en');
+  });
+  themeBtn.addEventListener('click',function(){
+    setTheme(root.getAttribute('data-theme')==='day'?'night':'day');
+  });
+  setTheme(localStorage.getItem('docs-theme')||'day');
+  setLang(localStorage.getItem('docs-lang')||'en');
+})();
+</script>
+</body>
+</html>

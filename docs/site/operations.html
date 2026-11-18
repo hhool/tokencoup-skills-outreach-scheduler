@@ -1,0 +1,258 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="day">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Operations — cron wiring &amp; daily rhythm — outreach-scheduler docs</title>
+<style>
+:root[data-theme="day"] {
+  --bg:#f7f7f5; --panel:#ffffff; --text:#1a1a1a; --muted:#6b6b6b;
+  --border:#dcdcd8; --accent:#2563eb; --code-bg:#f1f1ee; --link:#2563eb;
+}
+:root[data-theme="night"] {
+  --bg:#121417; --panel:#1c1f24; --text:#e4e6ea; --muted:#9aa0a8;
+  --border:#2e333a; --accent:#7aa2f7; --code-bg:#23272e; --link:#7aa2f7;
+}
+* { box-sizing:border-box; }
+body { margin:0; font-family:-apple-system,'Segoe UI','PingFang SC','Microsoft YaHei',sans-serif;
+  background:var(--bg); color:var(--text); line-height:1.65; }
+header { position:sticky; top:0; z-index:10; background:var(--panel);
+  border-bottom:1px solid var(--border); padding:10px 18px;
+  display:flex; align-items:center; gap:14px; flex-wrap:wrap; }
+header .brand { font-weight:700; letter-spacing:.2px; text-decoration:none; color:var(--text); }
+header nav { display:flex; gap:4px; flex-wrap:wrap; flex:1; }
+header nav a { padding:4px 10px; border-radius:6px; text-decoration:none;
+  color:var(--muted); font-size:14px; }
+header nav a:hover { background:var(--code-bg); color:var(--text); }
+header nav a.active { background:var(--accent); color:#fff; }
+.toggles { display:flex; gap:8px; }
+.toggles button { cursor:pointer; border:1px solid var(--border); background:var(--panel);
+  color:var(--text); border-radius:6px; padding:4px 10px; font-size:13px; }
+.toggles button:hover { background:var(--code-bg); }
+main { max-width:880px; margin:0 auto; padding:28px 18px 80px; }
+article { background:var(--panel); border:1px solid var(--border); border-radius:10px;
+  padding:28px 32px; }
+h1,h2,h3,h4 { line-height:1.3; color:var(--text); }
+a { color:var(--link); }
+code { background:var(--code-bg); padding:2px 5px; border-radius:4px;
+  font-size:.92em; font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace; }
+pre { background:var(--code-bg); padding:14px 16px; border-radius:8px;
+  overflow-x:auto; border:1px solid var(--border); }
+pre code { background:none; padding:0; }
+table { border-collapse:collapse; width:100%; margin:14px 0; font-size:.94em; }
+th,td { border:1px solid var(--border); padding:7px 10px; text-align:left; }
+th { background:var(--code-bg); }
+blockquote { border-left:3px solid var(--accent); margin:14px 0; padding:4px 16px;
+  color:var(--muted); }
+hr { border:none; border-top:1px solid var(--border); margin:26px 0; }
+footer { text-align:center; color:var(--muted); font-size:13px; padding:20px; }
+</style>
+</head>
+<body>
+<header>
+  <a class="brand" href="index.html">outreach-scheduler</a>
+  <nav><a href="readme.html" data-en="Overview" data-zh="概览">Overview</a>
+  <a href="business.html" data-en="Business" data-zh="业务层">Business</a>
+  <a href="client-intake.html" data-en="Client Intake" data-zh="客户接入">Client Intake</a>
+  <a href="deployment.html" data-en="Deployment" data-zh="部署">Deployment</a>
+  <a href="operations.html" class="active" data-en="Operations" data-zh="运维">Operations</a>
+  <a href="design.html" data-en="Design" data-zh="设计">Design</a></nav>
+  <div class="toggles">
+    <button id="lang" type="button">中文</button>
+    <button id="theme" type="button">夜视</button>
+  </div>
+</header>
+<main><article><div data-lang-en="1"><h1 style="display:none">Operations — cron wiring &amp; daily rhythm</h1><h1>Operations — cron wiring &amp; daily rhythm</h1>
+<h2>Cron entry points</h2>
+<p><code>scripts/daily.sh</code> is the only cron entry. Two segments:</p>
+<table>
+<thead>
+<tr>
+<th>segment</th>
+<th>what it does</th>
+<th>cadence</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>run</code></td>
+<td><code>execute</code> every active project (due plans only) + <code>report</code></td>
+<td>daily, at <code>scheduler.run_at</code> (default 09:30)</td>
+</tr>
+<tr>
+<td><code>pipeline</code></td>
+<td><code>import -&gt; probe -&gt; classify -&gt; dr -&gt; match -&gt; schedule</code></td>
+<td>weekly, or after new source data lands</td>
+</tr>
+<tr>
+<td><code>client-report</code> (CLI, not a daily.sh segment)</td>
+<td>per-project client-facing report (B2): live-link list, activity, decisions</td>
+<td>weekly (<code>--days 7</code>) or monthly (<code>--days 30</code>)</td>
+</tr>
+</tbody>
+</table>
+<p>Weekly client report via cron:</p>
+<pre><code>0 10 * * 1 /path/to/outreach-scheduler/bin/osched.py client-report &lt;project-domain&gt; --days 7 &gt;&gt; /tmp/osched.cron.log 2&gt;&amp;1
+</code></pre>
+<p>Install (crontab -e):</p>
+<pre><code>30 9 * * * /path/to/outreach-scheduler/scripts/daily.sh run &gt;&gt; /tmp/osched.cron.log 2&gt;&amp;1
+0 9 * * 1 /path/to/outreach-scheduler/scripts/daily.sh pipeline &gt;&gt; /tmp/osched.cron.log 2&gt;&amp;1
+</code></pre>
+<p>Rules:
+- Every stage is idempotent; a cron re-run never double-submits (plan rows leave <code>queued</code> once executed).
+- <code>dr</code> is fail-open: an unbound/absent API key skips enrichment, never blocks the pipeline.
+- Failures never crash the chain (<code>|| true</code> per project); everything lands in <code>run_log</code> and shows up in the daily report's human-action section.</p>
+<h2>DR (Open PageRank) IP binding</h2>
+<p>The free key is bound to one IP address. If the API returns
+<code>403 This free API key is set to another IP address</code>, either update the
+allowed IP at keywordseverywhere.com/account/openpagerank, or run the <code>dr</code>
+stage on the machine whose IP matches the binding. A stable server IP is
+preferable for batch enrichment (55k+ domains run against a 30k/month
+budget); a laptop on mobile broadband changes IPs and will need rebinding.</p>
+<h2>State machine quick reference</h2>
+<table>
+<thead>
+<tr>
+<th>plan.state</th>
+<th>meaning</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>queued</code></td>
+<td>scheduled, awaiting execution</td>
+</tr>
+<tr>
+<td><code>submitted</code> / <code>sent</code></td>
+<td>wave1 / wave2 done</td>
+</tr>
+<tr>
+<td><code>live</code></td>
+<td>verified live link on the directory page (B1 ledger)</td>
+</tr>
+<tr>
+<td><code>cua</code></td>
+<td>needs the CUA browser channel (captcha class)</td>
+</tr>
+<tr>
+<td><code>human</code></td>
+<td>needs a human (bot-blocked, no email, unknown captcha, 4xx)</td>
+</tr>
+<tr>
+<td><code>failed</code></td>
+<td>retryable failure exhausted (5xx/network, max 3)</td>
+</tr>
+</tbody>
+</table>
+<p>中文说明见 operations.zh.md。</p></div>
+<div data-lang-en="0" style="display:none"><h1 style="display:none">运维手册 — cron 接线与每日节奏</h1><h1>运维手册 — cron 接线与每日节奏</h1>
+<h2>Cron 入口</h2>
+<p><code>scripts/daily.sh</code> 是唯一 cron 入口，两个段：</p>
+<table>
+<thead>
+<tr>
+<th>段</th>
+<th>内容</th>
+<th>频率</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>run</code></td>
+<td>对所有 active 项目执行到期计划（<code>execute</code>）+ 日报（<code>report</code>）</td>
+<td>每日，<code>scheduler.run_at</code>（默认 09:30）</td>
+</tr>
+<tr>
+<td><code>pipeline</code></td>
+<td><code>import -&gt; probe -&gt; classify -&gt; dr -&gt; match -&gt; schedule</code> 供给链</td>
+<td>每周一次，或新源数据到位后手动跑</td>
+</tr>
+</tbody>
+</table>
+<p>安装（crontab -e）：</p>
+<pre><code>30 9 * * * /path/to/outreach-scheduler/scripts/daily.sh run &gt;&gt; /tmp/osched.cron.log 2&gt;&amp;1
+0 9 * * 1 /path/to/outreach-scheduler/scripts/daily.sh pipeline &gt;&gt; /tmp/osched.cron.log 2&gt;&amp;1
+</code></pre>
+<p>规则：
+- 每个阶段幂等；cron 重跑不会重复投递（计划行一旦执行就离开 <code>queued</code>）。
+- <code>dr</code> fail-open：key 未配置/未绑定时跳过富化，不阻塞流水线。
+- 单项目失败不断链（每项目 <code>|| true</code>）；全部落 <code>run_log</code>，出现在日报「人工待办」段。</p>
+<h2>DR（Open PageRank）IP 绑定</h2>
+<p>免费 key 绑定单一 IP。若 API 返回
+<code>403 This free API key is set to another IP address</code>，二选一：
+在 keywordseverywhere.com/account/openpagerank 改绑允许 IP，或在与绑定 IP
+一致的机器上跑 <code>dr</code> 阶段。批量富化（55k+ 域名对 30k/月额度）建议放固定
+服务器 IP；家宽/移动网络 IP 漂移，会反复需要改绑。</p>
+<h2>计划状态机速查</h2>
+<table>
+<thead>
+<tr>
+<th>plan.state</th>
+<th>含义</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>queued</code></td>
+<td>已排期待执行</td>
+</tr>
+<tr>
+<td><code>submitted</code> / <code>sent</code></td>
+<td>wave1 / wave2 完成</td>
+</tr>
+<tr>
+<td><code>live</code></td>
+<td>回访确认链接已上线（B1 实链台账）</td>
+</tr>
+<tr>
+<td><code>cua</code></td>
+<td>待 CUA 浏览器通道（验证码类）</td>
+</tr>
+<tr>
+<td><code>human</code></td>
+<td>需人工（bot-blocked、无邮箱、未知验证码、4xx）</td>
+</tr>
+<tr>
+<td><code>failed</code></td>
+<td>可重试失败耗尽（5xx/网络，最多 3 次）</td>
+</tr>
+</tbody>
+</table></div></article></main>
+<footer>bilingual docs · built from .md sources</footer>
+<script>
+(function(){
+  var root=document.documentElement;
+  var langBtn=document.getElementById('lang'), themeBtn=document.getElementById('theme');
+  function setLang(l){
+    root.setAttribute('data-lang',l);
+    document.querySelectorAll('[data-lang-en]').forEach(function(el){
+      el.style.display = (el.getAttribute('data-lang-en')==='1') === (l==='en') ? '' : 'none';
+    });
+    localStorage.setItem('docs-lang',l);
+    langBtn.textContent = l==='en' ? '中文' : 'English';
+    document.title = document.querySelector(l==='en'?'[data-lang-en="1"] h1':'[data-lang-en="0"] h1')
+      ? (document.querySelector(l==='en'?'[data-lang-en="1"] h1':'[data-lang-en="0"] h1').textContent + ' — outreach-scheduler docs')
+      : document.title;
+    if(window.location.pathname.endsWith('index.html')){
+      document.querySelectorAll('nav a').forEach(function(a){
+        a.textContent = l==='en' ? a.getAttribute('data-en') : a.getAttribute('data-zh');
+      });
+    }
+  }
+  function setTheme(t){
+    root.setAttribute('data-theme',t);
+    localStorage.setItem('docs-theme',t);
+    themeBtn.textContent = t==='day' ? '夜视' : '白天';
+  }
+  langBtn.addEventListener('click',function(){
+    setLang(root.getAttribute('data-lang')==='en'?'zh':'en');
+  });
+  themeBtn.addEventListener('click',function(){
+    setTheme(root.getAttribute('data-theme')==='day'?'night':'day');
+  });
+  setTheme(localStorage.getItem('docs-theme')||'day');
+  setLang(localStorage.getItem('docs-lang')||'en');
+})();
+</script>
+</body>
+</html>

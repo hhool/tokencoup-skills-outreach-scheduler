@@ -1,0 +1,567 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="day">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Business layer — commercialization roadmap — outreach-scheduler docs</title>
+<style>
+:root[data-theme="day"] {
+  --bg:#f7f7f5; --panel:#ffffff; --text:#1a1a1a; --muted:#6b6b6b;
+  --border:#dcdcd8; --accent:#2563eb; --code-bg:#f1f1ee; --link:#2563eb;
+}
+:root[data-theme="night"] {
+  --bg:#121417; --panel:#1c1f24; --text:#e4e6ea; --muted:#9aa0a8;
+  --border:#2e333a; --accent:#7aa2f7; --code-bg:#23272e; --link:#7aa2f7;
+}
+* { box-sizing:border-box; }
+body { margin:0; font-family:-apple-system,'Segoe UI','PingFang SC','Microsoft YaHei',sans-serif;
+  background:var(--bg); color:var(--text); line-height:1.65; }
+header { position:sticky; top:0; z-index:10; background:var(--panel);
+  border-bottom:1px solid var(--border); padding:10px 18px;
+  display:flex; align-items:center; gap:14px; flex-wrap:wrap; }
+header .brand { font-weight:700; letter-spacing:.2px; text-decoration:none; color:var(--text); }
+header nav { display:flex; gap:4px; flex-wrap:wrap; flex:1; }
+header nav a { padding:4px 10px; border-radius:6px; text-decoration:none;
+  color:var(--muted); font-size:14px; }
+header nav a:hover { background:var(--code-bg); color:var(--text); }
+header nav a.active { background:var(--accent); color:#fff; }
+.toggles { display:flex; gap:8px; }
+.toggles button { cursor:pointer; border:1px solid var(--border); background:var(--panel);
+  color:var(--text); border-radius:6px; padding:4px 10px; font-size:13px; }
+.toggles button:hover { background:var(--code-bg); }
+main { max-width:880px; margin:0 auto; padding:28px 18px 80px; }
+article { background:var(--panel); border:1px solid var(--border); border-radius:10px;
+  padding:28px 32px; }
+h1,h2,h3,h4 { line-height:1.3; color:var(--text); }
+a { color:var(--link); }
+code { background:var(--code-bg); padding:2px 5px; border-radius:4px;
+  font-size:.92em; font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace; }
+pre { background:var(--code-bg); padding:14px 16px; border-radius:8px;
+  overflow-x:auto; border:1px solid var(--border); }
+pre code { background:none; padding:0; }
+table { border-collapse:collapse; width:100%; margin:14px 0; font-size:.94em; }
+th,td { border:1px solid var(--border); padding:7px 10px; text-align:left; }
+th { background:var(--code-bg); }
+blockquote { border-left:3px solid var(--accent); margin:14px 0; padding:4px 16px;
+  color:var(--muted); }
+hr { border:none; border-top:1px solid var(--border); margin:26px 0; }
+footer { text-align:center; color:var(--muted); font-size:13px; padding:20px; }
+</style>
+</head>
+<body>
+<header>
+  <a class="brand" href="index.html">outreach-scheduler</a>
+  <nav><a href="readme.html" data-en="Overview" data-zh="概览">Overview</a>
+  <a href="business.html" class="active" data-en="Business" data-zh="业务层">Business</a>
+  <a href="client-intake.html" data-en="Client Intake" data-zh="客户接入">Client Intake</a>
+  <a href="deployment.html" data-en="Deployment" data-zh="部署">Deployment</a>
+  <a href="operations.html" data-en="Operations" data-zh="运维">Operations</a>
+  <a href="design.html" data-en="Design" data-zh="设计">Design</a></nav>
+  <div class="toggles">
+    <button id="lang" type="button">中文</button>
+    <button id="theme" type="button">夜视</button>
+  </div>
+</header>
+<main><article><div data-lang-en="1"><h1 style="display:none">Business layer — commercialization roadmap</h1><h1>Business layer — commercialization roadmap</h1>
+<p><strong>Positioning: the business layer is the commercialization track.</strong> The
+functional layer (import → probe → match → execute → report) is the
+<em>machine</em>; the business layer is what turns the machine into a client
+service that can be sold, delivered and renewed. Every item below either
+produces client-visible deliverables (B1/B2), extends deliverable service
+capacity (B3/B4), enables scaling to more clients (B5), or secures the
+supply that the service resells (B6).</p>
+<p>Derived from the shipped functional layer. This doc records the ratified
+discussion: which business features build on that layer, in what order,
+and why. No functional-layer rework is implied.</p>
+<h2>Commercialization mapping</h2>
+<table>
+<thead>
+<tr>
+<th>commercialization question</th>
+<th>answers</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>客户凭什么付费？ What does the client pay for?</td>
+<td>B1 live-link ledger + B2 client report</td>
+</tr>
+<tr>
+<td>服务能力边界在哪？ What can we deliver?</td>
+<td>B3 account lifecycle + B4 submittability</td>
+</tr>
+<tr>
+<td>规模化靠什么？ How does it scale?</td>
+<td>B5 multi-client ops view</td>
+</tr>
+<tr>
+<td>货源谁保障？ Who secures supply?</td>
+<td>B6 competitor refresh</td>
+</tr>
+</tbody>
+</table>
+<h2>Priority order: 1 → 2 → 3 first (proof-of-value closed loop), then 4/5 (efficiency), 6 (supply).</h2>
+<hr />
+<h2>B1. Live-link verification ledger  (priority 1)</h2>
+<p><strong>Submission ≠ live link.</strong> After a plan reaches <code>submitted</code>/<code>sent</code>, re-visit
+the directory page after N days and confirm the client's link actually
+appears; produce a deliverable "live links list". Misses auto-retry or fall
+to the human queue.</p>
+<ul>
+<li>Built on: plan state machine (new <code>live</code> state after <code>submitted</code>) +
+  probe re-visit machinery (probe_cache already has the 30-day audit
+  framework) + the CUA channel can reuse the same browser run.</li>
+<li>Value: the only hard evidence a client pays for; without it the daily
+  report's "submitted" is a process metric, not a result metric.</li>
+</ul>
+<h2>B2. Client report  (priority 2)</h2>
+<p>A client-facing filtered view of run_log: submissions, success rate,
+<strong>live-link list</strong>, items awaiting the client's decision. Emailed to the
+client summary mailbox on a weekly/monthly digest.</p>
+<ul>
+<li>Built on: report.py five-section skeleton + filter/render layer +
+  report.email (client summary-role mailbox).</li>
+<li>Value: the retention/renewal communication artifact; implements the
+  "client report" row in client-intake §3.</li>
+</ul>
+<h2>B3. Directory account lifecycle  (priority 3)</h2>
+<p>Many directories require a registered account before submission. Close the
+loop on the registration-role mailbox: fetch verification mails (IMAP),
+activate accounts, keep a credential ledger, reuse aged accounts.</p>
+<ul>
+<li>Built on: contact-email asset (registration role) + the SMTP/IMAP
+  credential model (<code>email_code_imap</code> is already reserved in config).</li>
+<li>Value: unlocks the large "register-first" directory segment; accounts
+  become reusable assets.</li>
+</ul>
+<h2>B4. Submittability profile &amp; template attribution  (priority 4)</h2>
+<p>Aggregate execution failures (bot-blocked / captcha / no-form / 4xx) into a
+per-domain submittability profile feeding min_score and exclusion lists;
+rotate wave2 templates and attribute by approval rate.</p>
+<ul>
+<li>Built on: run_log already records every failure detail — this is an
+  aggregation layer only.</li>
+<li>Value: quota is finite (100 addresses/domain/day); spend it where forms
+  actually pass.</li>
+</ul>
+<h2>B5. Multi-client operations view  (priority 5)</h2>
+<p>Per-client aggregation table: pending / confirmed / submitted / live /
+human-queue, plus a client-level SLA (minimum daily submissions) with
+alerts on shortfall.</p>
+<ul>
+<li>Built on: project + plan tables; a pure query layer.</li>
+<li>Value: surfaced by the three simulated clients; the operations base
+  before scaling beyond a handful of clients.</li>
+</ul>
+<h2>B6. Competitor-driven supply refresh  (priority 6)</h2>
+<p>Upgrade WDC competitor harvesting from manual import to a scheduled
+refresh: new directories flow into the pool → probe → match → confirmation
+queue automatically; humans only confirm.</p>
+<ul>
+<li>Built on: import chain + cron <code>pipeline</code> segment already reserves a slot.</li>
+<li>Value: keeps backlink supply from going dry.</li>
+</ul>
+<hr />
+<h2>Ratified mailbox-role context (client-intake §5.4)</h2>
+<p>The client mailbox carries two roles — registration (contact-email asset)
+and periodic summary (report.email) — and one mailbox may serve both.
+B2's recipient is the summary role; B3's credentials are the registration
+role. Splitting into two mailboxes later is config-only.</p>
+<h2>Strategy context (ratified 2026-11-18)</h2>
+<ul>
+<li><strong>Why this exists</strong>: the served sites must pass AdSense review and grow
+  on their own traffic; backlinks are the traffic engine behind that goal.
+  Every commercial-layer feature traces back to "more real links, proven
+  to the client".</li>
+<li><strong>Operations mode</strong>: backend runs on fly.io (HTTP-side pipeline, cron,
+  sqlite volume) — fully agent-free (no assistant-platform dependency).
+  CUA (real-Chrome captcha) stays on the desktop for the current sites and
+  is acceptable in early commercial stage; later replace with an
+  open-source or commercial captcha solution (single touch point: §7.1
+  routing). See docs/deployment.md for the duty matrix.</li>
+<li><strong>AI layer (later phase)</strong>: the backend will add AI for client
+  requirement/case matching, planning, and capability matching. AI plugs
+  into the existing CLI/DB contracts as a caller, never bypassing human
+  gates. Hook-point table in docs/deployment.md.</li>
+</ul>
+<h2>Backlog snapshot (2026-11-18)</h2>
+<table>
+<thead>
+<tr>
+<th>item</th>
+<th>status</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>functional layer (import→report, cron, CUA)</td>
+<td>shipped, pushed</td>
+</tr>
+<tr>
+<td><strong>B1 live-link ledger</strong> (<code>verify</code> CLI, <code>link_verify</code> table, plan state <code>live</code>, in daily.sh run)</td>
+<td><strong>shipped</strong></td>
+</tr>
+<tr>
+<td><strong>B2 client report</strong> (<code>client-report</code> CLI, <code>client_report.py</code>, per-project <code>report.email</code>)</td>
+<td><strong>shipped</strong> — real send verified</td>
+</tr>
+<tr>
+<td><strong>B3 account lifecycle (phases 1-2: ledger + mail-verify + CUA activation click)</strong></td>
+<td><strong>shipped</strong> — real inbox verified, pending -&gt; active end-to-end; phase 3 candidates: registration automation, aged-account reuse</td>
+</tr>
+<tr>
+<td><strong>B4 submittability profile</strong> (<code>profile</code> CLI, <code>profile.py</code>)</td>
+<td><strong>shipped</strong> — failure-mix classification, per-domain recommendation (preferred/keep/bot-blocked/exclude); template attribution fills as wave2 data accumulates</td>
+</tr>
+<tr>
+<td><strong>B5 multi-client operations view</strong> (<code>overview</code> CLI, <code>ops.py</code>, in daily.sh run+pipeline)</td>
+<td><strong>shipped</strong> — per-client stage counts, quota usage, idle/human-queue SLA alerts</td>
+</tr>
+<tr>
+<td><strong>B6 competitor supply refresh</strong> (monthly <code>pipeline</code> cron pass)</td>
+<td><strong>shipped</strong> — idempotent pipeline auto-flows new competitor data to the confirmation queue; humans only confirm</td>
+</tr>
+<tr>
+<td>OPR DR enrichment</td>
+<td>pending IP binding decision (VPN exit, on hold)</td>
+</tr>
+<tr>
+<td>wave2 SMTP live send</td>
+<td>ready; awaiting first wave2 plan</td>
+</tr>
+<tr>
+<td>real-site full run</td>
+<td>pending queue has v3/v2 captcha candidates</td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h2>Competitor landscape &amp; market verdict (ratified 2026-11-18)</h2>
+<p>Scope: 2C/2B × overseas/domestic. Findings from a structured sweep of the
+existing link-building tool market, distilled into judgments that constrain
+pricing, packaging and the captcha-replacement plan.</p>
+<h3>Market matrix</h3>
+<table>
+<thead>
+<tr>
+<th>quadrant</th>
+<th>incumbent examples</th>
+<th>what they sell</th>
+<th>verdict for us</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>overseas 2C tools</td>
+<td>open-source scrapers/submitters, browser-automation frameworks</td>
+<td>free self-serve tooling</td>
+<td>do NOT compete — free/open-source saturates the low end at $0</td>
+</tr>
+<tr>
+<td>overseas 2B SaaS</td>
+<td>Respona, Pitchbox-style outreach platforms</td>
+<td>per-link pricing roughly $100–500/link, campaign management</td>
+<td>benchmark only; our differentiation is the <strong>live-link closed loop</strong> (submission → re-visit → verified live), which none of them productizes</td>
+</tr>
+<tr>
+<td>overseas 2B done-for-you</td>
+<td>link-building agencies</td>
+<td>per-link deliverables, manual QA</td>
+<td>direct comparables for pricing our service tier</td>
+</tr>
+<tr>
+<td>domestic 2C</td>
+<td>none in this category</td>
+<td>—</td>
+<td>no directory-link category exists</td>
+</tr>
+<tr>
+<td>domestic 2B</td>
+<td>友链 exchange ecosystems (platforms + manual trades)</td>
+<td>friend-link placement, not directory submission</td>
+<td>different category; not a competitor, a supply channel option</td>
+</tr>
+</tbody>
+</table>
+<h3>Judgments</h3>
+<ol>
+<li><strong>No 2C tool-selling.</strong> The open-source tier already prices at zero; a
+   paid 2C tool has no wedge. Tooling stays internal.</li>
+<li><strong>Sell 2B service, priced against Resona-class SaaS.</strong> The market anchor
+   is ~$100–500 per delivered link. Our edge is evidence: the live-link
+   ledger (B1) plus the client report (B2) prove the link exists — no
+   competitor in the sweep closes that loop automatically.</li>
+<li><strong>CUA replacement candidate: open-source real-Chrome engines.</strong> The
+   ratified desktop-only captcha phase has a named successor candidate —
+   an open-source, MCP-exposed real-Chrome automation engine (the class of
+   engine behind commercial "AI browser operator" products). Interface is
+   compatible with the §7.1 routing touch point; swap is config-level.
+   Re-evaluate when commercial volume justifies it.</li>
+<li><strong>The pool is a durable asset.</strong> ~55k directory pool + probe_cache
+   verdict history compounds with every run; it is the moat a new entrant
+   cannot copy by installing a tool.</li>
+<li><strong>Domestic market: no directory category.</strong> Domestic demand is served
+   by the 友链 ecosystem instead. Treat domestic as a possible supply or
+   resale channel, not a product market.</li>
+</ol>
+<h3>Pricing implication (draft)</h3>
+<p>Anchor 2B service pricing to the delivered-link unit, not subscription:
+per-live-link pricing at a discount to the $100–500/link SaaS ceiling,
+with the live-link ledger as the receipt that justifies the invoice.</p></div>
+<div data-lang-en="0" style="display:none"><h1 style="display:none">业务层 — 商业化落地路线图</h1><h1>业务层 — 商业化落地路线图</h1>
+<p><strong>定位：业务层就是商业化落地轨道。</strong> 功能层（import → probe → match →
+execute → report）是「机器」；业务层是把机器变成可售卖、可交付、可续费
+的客户服务。下面每一项要么产出客户可见的交付物（B1/B2），要么扩展可交付
+的服务能力（B3/B4），要么支撑规模化接更多客户（B5），要么保障服务的货源
+（B6）。</p>
+<p>基于已交付的功能层。本文档记录已讨论定稿的业务层功能：各自建立在哪些
+现有模块之上、顺序与理由。不涉及功能层返工。</p>
+<h2>商业化对应关系</h2>
+<table>
+<thead>
+<tr>
+<th>商业化问题</th>
+<th>回答</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>客户凭什么付费？</td>
+<td>B1 实链台账 + B2 客户报告</td>
+</tr>
+<tr>
+<td>服务能力边界在哪？</td>
+<td>B3 账号生命周期 + B4 可投递性画像</td>
+</tr>
+<tr>
+<td>规模化靠什么？</td>
+<td>B5 多客户运营视图</td>
+</tr>
+<tr>
+<td>货源谁保障？</td>
+<td>B6 竞品供给刷新</td>
+</tr>
+</tbody>
+</table>
+<h2>优先级：1 → 2 → 3 先做（价值证明闭环），4/5 效率层，6 供给层。</h2>
+<hr />
+<h2>B1. 实链确认台账（优先级 1）</h2>
+<p><strong>提交成功 ≠ 链接上线。</strong> 计划到达 <code>submitted</code>/<code>sent</code> 后，N 天后自动回访
+该目录页，确认客户链接真实出现；产出可交付的「已上线链接清单」。未出现的
+自动重投或进人工队列。</p>
+<ul>
+<li>建立在：plan 状态机（<code>submitted</code> 后新增 <code>live</code> 状态）+ probe 回访机制
+  （probe_cache 已有 30 天审计框架）+ CUA 通道可复用同一次浏览器会话。</li>
+<li>价值：客户付费的唯一硬证据；没有它，日报里的 submitted 只是过程指标。</li>
+</ul>
+<h2>B2. 客户报告（优先级 2）</h2>
+<p>面向客户的 run_log 过滤视图：提交数、成功率、<strong>实链清单</strong>、待客户决策项。
+按周/月摘要直发客户汇总邮箱。</p>
+<ul>
+<li>建立在：report.py 五段式骨架 + 过滤/渲染层 + report.email（客户邮箱的
+  汇总角色）。</li>
+<li>价值：续费沟通载体；落地 client-intake §3 的「客户报告」条目。</li>
+</ul>
+<h2>B3. 目录账号生命周期（优先级 3）</h2>
+<p>大量目录要求先注册账号才能提交。把注册角色邮箱的链路闭合：自动收验证信
+（IMAP）、激活账号、凭据台账、老账号复用换量。</p>
+<ul>
+<li>建立在：contact-email 资产（注册角色）+ SMTP/IMAP 凭据模型
+  （config 里 <code>email_code_imap</code> 已预留）。</li>
+<li>价值：解锁大批「需注册」目录；账号成为可复用资产。</li>
+</ul>
+<h2>B4. 可投递性画像与模板归因（优先级 4）</h2>
+<p>把执行失败原因聚合（bot-blocked / captcha / 无表单 / 4xx）成每域名
+「可投递性画像」，反哺 min_score 和排除清单；wave2 多模板轮换按通过率
+归因。</p>
+<ul>
+<li>建立在：run_log 已记录全部失败明细——纯聚合层。</li>
+<li>价值：配额有限（域名 100 地址/天），把额度花在能通过的站点上。</li>
+</ul>
+<h2>B5. 多客户运营视图（优先级 5）</h2>
+<p>按客户聚合总表：pending / confirmed / 已提交 / 实链 / 人工待办，加客户级
+SLA（每日最低提交数）与不达标预警。</p>
+<ul>
+<li>建立在：project + plan 表；纯查询层。</li>
+<li>价值：三个模拟客户已暴露的需求；规模化前的运营底座。</li>
+</ul>
+<h2>B6. 竞品驱动的供给刷新（优先级 6）</h2>
+<p>WDC 竞品收割从手动导入升级为定时刷新：新目录自动入池 → probe → match →
+待确认队列，人只做 confirm。</p>
+<ul>
+<li>建立在：import 链路 + cron <code>pipeline</code> 段已留位。</li>
+<li>价值：外链供给不断档。</li>
+</ul>
+<hr />
+<h2>邮箱角色模型背景（client-intake §5.4 已定稿）</h2>
+<p>客户邮箱承担两种角色——注册（contact-email 资产）与阶段性汇总
+（report.email），一个邮箱可同时兼任。B2 的收件人是汇总角色，B3 的凭据
+是注册角色。将来拆成两个邮箱只改配置。</p>
+<h2>战略背景（2026-11-18 拍板）</h2>
+<ul>
+<li><strong>为什么做这个</strong>：服务的站点要过 AdSense 审核、靠自身流量增长；外链
+  是这一目标的流量引擎。商业层每个功能都回溯到「更多真实链接，向客户
+  证明」。</li>
+<li><strong>运营形态</strong>：后台跑 fly.io（HTTP 侧 pipeline + cron + sqlite 卷），
+  完全脱离智能体平台运行（任何环节无平台依赖）。CUA（真 Chrome 验证
+  码）前期留在本地服务现有站点、商业初期可接受；后期替换为开源或商用
+  验证码方案（唯一接触点 §7.1 路由）。职责矩阵见 docs/deployment.zh.md。</li>
+<li><strong>AI 层（后期）</strong>：后台将加入 AI 用于客户需求/案例对接、策划、能力
+  对接。AI 只作为现有 CLI/DB 契约的调用方，不绕过人工闸。挂接点表见
+  docs/deployment.zh.md。</li>
+</ul>
+<h2>积压快照（2026-11-18）</h2>
+<table>
+<thead>
+<tr>
+<th>项</th>
+<th>状态</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>功能层（import→report、cron、CUA）</td>
+<td>已交付并推送</td>
+</tr>
+<tr>
+<td><strong>B1 实链台账</strong>（verify CLI、link_verify 表、plan 新状态 live、已接入 daily.sh run）</td>
+<td><strong>已交付</strong></td>
+</tr>
+<tr>
+<td><strong>B2 客户报告</strong>（client-report CLI、client_report.py、项目级 report.email）</td>
+<td><strong>已交付</strong>——实发已验证</td>
+</tr>
+<tr>
+<td><strong>B3 账号生命周期（一、二期：台账 + 收信 + CUA 激活点击）</strong></td>
+<td><strong>已交付</strong>——真实收件箱验证、pending→active 端到端；三期候选：注册自动化、老账号复用</td>
+</tr>
+<tr>
+<td><strong>B4 可投递性画像</strong>（profile CLI、profile.py）</td>
+<td><strong>已交付</strong>——失败归类、每域名处置建议（preferred/keep/bot-blocked/exclude）；模板归因随 wave2 数据积累自动出现</td>
+</tr>
+<tr>
+<td><strong>B5 多客户运营视图</strong>（overview CLI、ops.py、已接入 daily.sh run+pipeline）</td>
+<td><strong>已交付</strong>——每客户全阶段计数、配额占用、空闲/人工队列 SLA 告警</td>
+</tr>
+<tr>
+<td><strong>B6 竞品供给刷新</strong>（月度 pipeline cron）</td>
+<td><strong>已交付</strong>——幂等 pipeline 自动把新竞品数据流入待确认队列，人只做 confirm</td>
+</tr>
+<tr>
+<td>OPR DR 富化</td>
+<td>待 IP 绑定决策（VPN 出口，暂挂）</td>
+</tr>
+<tr>
+<td>wave2 SMTP 实发</td>
+<td>就绪；等第一条 wave2 计划</td>
+</tr>
+<tr>
+<td>真站全链路</td>
+<td>pending 队列有 v3/v2 验证码候选</td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h2>竞品格局与市场裁决（2026-11-18 定稿）</h2>
+<p>范围：2C/2B × 海外/国内。对外链工具市场做了结构化扫描，结论收敛为
+对定价、打包与验证码替换计划有约束力的判断。</p>
+<h3>市场矩阵</h3>
+<table>
+<thead>
+<tr>
+<th>象限</th>
+<th>现有玩家</th>
+<th>卖什么</th>
+<th>我们的裁决</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>海外 2C 工具</td>
+<td>开源采集/提交器、浏览器自动化框架</td>
+<td>免费自助工具</td>
+<td>不做——免费/开源已把低端打到 $0</td>
+</tr>
+<tr>
+<td>海外 2B SaaS</td>
+<td>Respona、Pitchbox 类外联平台</td>
+<td>按 link 计费约 $100–500，加活动管理</td>
+<td>只做定价锚；我们的差异点是<strong>实链闭环</strong>（提交→回访→验证上线），扫描范围内没有竞品把它产品化</td>
+</tr>
+<tr>
+<td>海外 2B 代做</td>
+<td>外链代发服务商</td>
+<td>按 link 交付，人工质检</td>
+<td>我们服务档位的直接定价参照</td>
+</tr>
+<tr>
+<td>国内 2C</td>
+<td>该品类不存在</td>
+<td>—</td>
+<td>无目录外链品类</td>
+</tr>
+<tr>
+<td>国内 2B</td>
+<td>友链交换生态（平台+人工换链）</td>
+<td>友链位，不是目录提交</td>
+<td>不同品类；不是竞品，是可选供给渠道</td>
+</tr>
+</tbody>
+</table>
+<h3>判断</h3>
+<ol>
+<li><strong>不做 2C 工具。</strong> 开源层已是零价，付费 2C 工具没有楔子。工具只留
+   内部自用。</li>
+<li><strong>卖 2B 服务，对标 Resona 级 SaaS 定价。</strong> 市场锚点约 $100–500/实链。
+   我们的筹码是证据：实链台账（B1）+ 客户报告（B2）能证明链接存在——
+   扫描范围内没有竞品自动闭合这个环。</li>
+<li><strong>CUA 替换候选：开源真 Chrome 引擎。</strong> 已定稿的「验证码留桌面」阶段
+   有具名继任者——开源、以 MCP 接口暴露的真 Chrome 自动化引擎（即商业
+   「AI 浏览器操作员」产品背后的那一类引擎）。接口与 §7.1 路由接触点
+   兼容，替换是配置级改动。商业量起来后再评估切换。</li>
+<li><strong>池子是长期资产。</strong> ~55k 目录池 + probe_cache 判定史随每次运行
+   复利增长；这是新进入者装个工具抄不走的护城河。</li>
+<li><strong>国内市场：无目录品类。</strong> 国内需求由友链生态承接。把国内当作可能的
+   供给或转售渠道，而不是产品市场。</li>
+</ol>
+<h3>定价含义（草案）</h3>
+<p>2B 服务按交付实链计价，不做订阅：以低于 $100–500/link SaaS 天花板一定
+折扣的每实链价格收费，实链台账就是支撑开票的凭证。</p></div></article></main>
+<footer>bilingual docs · built from .md sources</footer>
+<script>
+(function(){
+  var root=document.documentElement;
+  var langBtn=document.getElementById('lang'), themeBtn=document.getElementById('theme');
+  function setLang(l){
+    root.setAttribute('data-lang',l);
+    document.querySelectorAll('[data-lang-en]').forEach(function(el){
+      el.style.display = (el.getAttribute('data-lang-en')==='1') === (l==='en') ? '' : 'none';
+    });
+    localStorage.setItem('docs-lang',l);
+    langBtn.textContent = l==='en' ? '中文' : 'English';
+    document.title = document.querySelector(l==='en'?'[data-lang-en="1"] h1':'[data-lang-en="0"] h1')
+      ? (document.querySelector(l==='en'?'[data-lang-en="1"] h1':'[data-lang-en="0"] h1').textContent + ' — outreach-scheduler docs')
+      : document.title;
+    if(window.location.pathname.endsWith('index.html')){
+      document.querySelectorAll('nav a').forEach(function(a){
+        a.textContent = l==='en' ? a.getAttribute('data-en') : a.getAttribute('data-zh');
+      });
+    }
+  }
+  function setTheme(t){
+    root.setAttribute('data-theme',t);
+    localStorage.setItem('docs-theme',t);
+    themeBtn.textContent = t==='day' ? '夜视' : '白天';
+  }
+  langBtn.addEventListener('click',function(){
+    setLang(root.getAttribute('data-lang')==='en'?'zh':'en');
+  });
+  themeBtn.addEventListener('click',function(){
+    setTheme(root.getAttribute('data-theme')==='day'?'night':'day');
+  });
+  setTheme(localStorage.getItem('docs-theme')||'day');
+  setLang(localStorage.getItem('docs-lang')||'en');
+})();
+</script>
+</body>
+</html>

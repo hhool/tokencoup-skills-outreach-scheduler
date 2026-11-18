@@ -1,0 +1,1120 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="day">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>outreach-scheduler — Design Document — outreach-scheduler docs</title>
+<style>
+:root[data-theme="day"] {
+  --bg:#f7f7f5; --panel:#ffffff; --text:#1a1a1a; --muted:#6b6b6b;
+  --border:#dcdcd8; --accent:#2563eb; --code-bg:#f1f1ee; --link:#2563eb;
+}
+:root[data-theme="night"] {
+  --bg:#121417; --panel:#1c1f24; --text:#e4e6ea; --muted:#9aa0a8;
+  --border:#2e333a; --accent:#7aa2f7; --code-bg:#23272e; --link:#7aa2f7;
+}
+* { box-sizing:border-box; }
+body { margin:0; font-family:-apple-system,'Segoe UI','PingFang SC','Microsoft YaHei',sans-serif;
+  background:var(--bg); color:var(--text); line-height:1.65; }
+header { position:sticky; top:0; z-index:10; background:var(--panel);
+  border-bottom:1px solid var(--border); padding:10px 18px;
+  display:flex; align-items:center; gap:14px; flex-wrap:wrap; }
+header .brand { font-weight:700; letter-spacing:.2px; text-decoration:none; color:var(--text); }
+header nav { display:flex; gap:4px; flex-wrap:wrap; flex:1; }
+header nav a { padding:4px 10px; border-radius:6px; text-decoration:none;
+  color:var(--muted); font-size:14px; }
+header nav a:hover { background:var(--code-bg); color:var(--text); }
+header nav a.active { background:var(--accent); color:#fff; }
+.toggles { display:flex; gap:8px; }
+.toggles button { cursor:pointer; border:1px solid var(--border); background:var(--panel);
+  color:var(--text); border-radius:6px; padding:4px 10px; font-size:13px; }
+.toggles button:hover { background:var(--code-bg); }
+main { max-width:880px; margin:0 auto; padding:28px 18px 80px; }
+article { background:var(--panel); border:1px solid var(--border); border-radius:10px;
+  padding:28px 32px; }
+h1,h2,h3,h4 { line-height:1.3; color:var(--text); }
+a { color:var(--link); }
+code { background:var(--code-bg); padding:2px 5px; border-radius:4px;
+  font-size:.92em; font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace; }
+pre { background:var(--code-bg); padding:14px 16px; border-radius:8px;
+  overflow-x:auto; border:1px solid var(--border); }
+pre code { background:none; padding:0; }
+table { border-collapse:collapse; width:100%; margin:14px 0; font-size:.94em; }
+th,td { border:1px solid var(--border); padding:7px 10px; text-align:left; }
+th { background:var(--code-bg); }
+blockquote { border-left:3px solid var(--accent); margin:14px 0; padding:4px 16px;
+  color:var(--muted); }
+hr { border:none; border-top:1px solid var(--border); margin:26px 0; }
+footer { text-align:center; color:var(--muted); font-size:13px; padding:20px; }
+</style>
+</head>
+<body>
+<header>
+  <a class="brand" href="index.html">outreach-scheduler</a>
+  <nav><a href="readme.html" data-en="Overview" data-zh="概览">Overview</a>
+  <a href="business.html" data-en="Business" data-zh="业务层">Business</a>
+  <a href="client-intake.html" data-en="Client Intake" data-zh="客户接入">Client Intake</a>
+  <a href="deployment.html" data-en="Deployment" data-zh="部署">Deployment</a>
+  <a href="operations.html" data-en="Operations" data-zh="运维">Operations</a>
+  <a href="design.html" class="active" data-en="Design" data-zh="设计">Design</a></nav>
+  <div class="toggles">
+    <button id="lang" type="button">中文</button>
+    <button id="theme" type="button">夜视</button>
+  </div>
+</header>
+<main><article><div data-lang-en="1"><h1 style="display:none">outreach-scheduler — Design Document</h1><h1>outreach-scheduler — Design Document</h1>
+<p>Date: 2026-11-18 · Status: design draft, ratified by user across four decision rounds
+This document lives in the <code>outreach-scheduler/</code> project folder; the system will later run independently of any external toolchain.</p>
+<p>Chinese version: see <code>DESIGN.zh.md</code>.</p>
+<hr />
+<h2>0. Positioning</h2>
+<p>The four original requirements describe one thing: an <strong>outreach planning &amp; scheduling center</strong>. Recommended as a standalone repo <code>outreach-scheduler</code> with four layers:</p>
+<ol>
+<li><strong>Import layer</strong>: link library → link pool (one-way import; nothing is written back to sources)</li>
+<li><strong>Pool</strong>: single-file SQLite, auto-classified + DR weighting</li>
+<li><strong>Planning layer</strong>: project (domain) → auto-match → <strong>one mandatory human-confirmation gate</strong> → configurable send plan</li>
+<li><strong>Execution layer</strong>: periodic auto-execution (wave1 form submit + wave2 email send) + daily email report</li>
+</ol>
+<p>Relation to existing systems:
+- <strong>Import sources = WDC harvested data + other similar backlink datasets</strong> (never written back)
+- workbench <code>targets.jsonl</code> / prospector exports are <strong>NOT import sources</strong> and are no longer upstream; workbench keeps its own review/ledger role untouched
+- The legacy mail system's R-520 convention (human sending) applies to that system only; this system implements automated sending independently, but keeps an escape hatch: failures/suspicious results go to a human queue</p>
+<p>Key design consequence: WDC/similar data are <strong>raw competitor backlinks</strong> (external links pointing to competitors), not a ready-made "submittable platform list". The import layer therefore includes a <strong>probe stage</strong>: HTTP-probe each URL to determine "is it submittable" — entries with submit forms / register endpoints / contact emails are upgraded to opportunity entries; the rest stay as ordinary pool entries.</p>
+<hr />
+<h2>1. Ratified decisions (2026-11-18, four rounds)</h2>
+<table>
+<thead>
+<tr>
+<th>#</th>
+<th>Question</th>
+<th>Decision</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>1</td>
+<td>Link-library source</td>
+<td><strong>WDC data + other similar harvested backlink datasets</strong>. workbench targets.jsonl + prospector exports are not used</td>
+</tr>
+<tr>
+<td>1a</td>
+<td>Import-source design</td>
+<td><strong>Abstract interface first + unified output model</strong> (§4b SourceAdapter/SourceRecord); new sources plug in via adapters, zero downstream changes</td>
+</tr>
+<tr>
+<td>1b</td>
+<td>WDC code reuse</td>
+<td>The 4 WDC processing files from the internal harvest repository were copied as-is into <code>import/</code> (harvest_competitor_links.py, competitor_backlinks.py, export_wdc_fast.py, dl.sh + README)</td>
+</tr>
+<tr>
+<td>1b</td>
+<td>Captcha recognition</td>
+<td><strong>Added requirement.</strong> Execution layer must recognize captchas (tiered strategy, §7); unsolvable ones go to the human queue</td>
+</tr>
+<tr>
+<td>2</td>
+<td>DR weighting</td>
+<td><strong>Yes.</strong> Enabled via free sources: Keywords Everywhere Open PageRank (free 30k domains/month, 0-10 score); Moz free tier (50 rows/month, needs credit card) is supplementary only, not a dependency</td>
+</tr>
+<tr>
+<td>3</td>
+<td>Execution boundary</td>
+<td><strong>Fully automated</strong> (wave1 form submit auto, wave2 email auto-send); no "list-only" mode</td>
+</tr>
+<tr>
+<td>4</td>
+<td>Email report</td>
+<td>Sent automatically; <strong>recipient defaults to empty = not sent</strong>; enabling happens via config</td>
+</tr>
+<tr>
+<td>5</td>
+<td>Human confirmation after matching</td>
+<td><strong>Required.</strong> Auto-match → pending queue → human selection → scheduled plan → executor only runs confirmed items</td>
+</tr>
+<tr>
+<td>6</td>
+<td>Doc language</td>
+<td><strong>English-primary <code>.md</code> / Chinese <code>.zh.md</code></strong></td>
+</tr>
+<tr>
+<td>7</td>
+<td>Submit paths (round 5)</td>
+<td><strong>Discovered submit paths are recorded and reused</strong>; paths are re-verified and updated promptly when they change (§4c)</td>
+</tr>
+<tr>
+<td>8</td>
+<td>Project assets (round 5)</td>
+<td><strong>New project input = a domain.</strong> Site TDK, level-1/2 page URLs, blog articles, outreach email copy are collected per project; missing items are probed; if probing fails, generic templates fill in (§5a). Ratified same day: TDK-missing stays flagged (no placeholder); article fallback = site-summary-derived text; page URLs manual-only (no sitemap candidates); path audit every 30 days</td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h2>2. Architecture &amp; data flow</h2>
+<pre><code>Import sources                     This repo (standalone)
+┌──────────────────┐   ┌──────────────────────────────────────────────┐
+│ WDC harvest data │──►│ ① import+probe ──► ② pool (SQLite)           │
+│ similar datasets │   │  dedupe → HTTP probe (entry/form/captcha/    │
+│ (raw backlinks)  │   │  contact) → classify + DR                    │
+└──────────────────┘   └──────────────────────┬───────────────────────┘
+                                    ┌─────────▼──────────┐
+                                    │ ③ planning          │
+   human-confirmation gate ───────► │ project (domain) →  │
+   (select from pending queue)      │ auto-match → score  │
+                                    │ → pending queue     │
+                                    └─────────┬──────────┘
+                                    ┌─────────▼──────────┐
+                                    │ ④ execution         │
+                                    │ cron-launched CLI:  │
+                                    │ take today's plan → │
+                                    │ auto-execute        │
+                                    │ (captcha tiers) →   │
+                                    │ write back → SMTP   │
+                                    │ report              │
+                                    └─────────────────────┘
+</code></pre>
+<p>Key points:
+- The pool is the single source of truth; imports dedupe by (domain + page URL), with provenance kept in <code>source</code>
+- WDC/similar data are raw competitor backlinks — <strong>the probe stage decides "submittable or not"</strong>: entries with a submit endpoint/contact are upgraded to opportunities, others stay as ordinary pool entries
+- A mandatory human-confirmation gate sits between matching and execution (decision #5)
+- The executor only consumes items that are confirmed <em>and</em> scheduled; it never touches <code>pending</code> state</p>
+<hr />
+<h2>3. Data model (SQLite tables, draft)</h2>
+<pre><code>pool        pool entry
+  id, source(wdc|similar:&lt;name&gt;), source_id, url, domain,
+  anchor_text, target_domain(competitor domain the backlink points to),
+  entry_url(discovered submit/register endpoint),
+  has_submit_form, form_fields(JSON), captcha_type(none|recaptcha_v2|
+    recaptcha_v3|turnstile|hcaptcha|image|email_code|unknown),
+  contact_email, probe_state(unprobed|probed|unreachable),
+  site_type(directory|bookmark|saas-directory|launchpad|blog|forum|…),
+  submit_type(auto|register|free|listing|posting|guest_post|pitch|…),
+  wave(1|2|3), category(gaming|parenting|tools|general|…),
+  dr(0-10 Open PageRank), language, geo,
+  status(active|dead|bot-blocked|rejected),
+  first_seen, last_seen, raw(JSON passthrough)
+
+project     outreach project
+  id, domain, tags(JSON), status, created_at
+
+match       match result
+  id, project_id, pool_id, score, score_detail(JSON),
+  state(pending|confirmed|rejected), confirmed_at
+
+plan        schedule &amp; execution record
+  id, project_id, match_id, scheduled_date, channel(form|email),
+  template_id, state(queued|sent|failed|blocked|skipped),
+  captcha_solved(0|1), captcha_cost, executed_at, result_note
+
+run_log     execution log
+  id, ts, action, target, result, note
+
+probe_cache  submit-path cache (recorded discoveries, reusable; §4c)
+  id, domain, entry_url, form_signature(field-name hash), captcha_type,
+  contact_email, success_count, last_probed, last_verified,
+  state(valid|changed|gone|blocked),
+  history(JSON: [{ts, old_entry, new_entry, reason}])
+
+project_asset  per-project site assets (§5a)
+  id, project_id, kind(tdk|page|article|email_copy),
+  source(provided|probed|template), content, url(nullable), fetched_at
+</code></pre>
+<p>Configuration never lives in the database — all YAML (§6); changing config changes behavior.</p>
+<hr />
+<h2>4. Auto-classification pipeline (runs at import)</h2>
+<p><strong>Step 1: HTTP probe</strong> — WDC/similar data are raw backlinks and must be probed before submission:
+- Fetch the page, identify submit/register endpoints (patterns like submit.php / add-link / register + form DOM signatures)
+- Extract form fields, <strong>captcha type</strong> (recaptcha_v2/v3, turnstile, hcaptcha, image, email code, none), contact email
+- Entries with no endpoint are marked unprobed and settle in the pool; they do not enter submit matching. Probe results are cached to avoid refetching</p>
+<p><strong>Step 2: three-layer classification</strong>, all automatic:</p>
+<ol>
+<li><strong>site_type</strong>: classified by submit_type + DOM/URL signatures into directory / bookmark / SaaS directory / launchpad / blog / forum</li>
+<li><strong>wave derivation</strong>: decided by the primary submit_type; an explicit <code>wave</code> value always wins over the derived one</li>
+<li><strong>category</strong>: keyword rule table (gaming/parenting/tools/…); rules first, manual correction later; rule table lives in config and is extensible</li>
+</ol>
+<p>DR enrichment:
+- Open PageRank batch queries (deduped by domain, local cache, never queried twice)
+- <strong>Known pitfall</strong>: free API keys are bound to a single egress IP; switching networks yields 403 address_error (already handled in claude-seo). Bind the machine's egress IP on the account page; changeable once per week
+- DR feeds matching weights (§5) and pool layer statistics</p>
+<p>Liveness rule (existing convention): 403/412/429 = Cloudflare anti-bot, <strong>not</strong> a dead link — keep and mark <code>bot-blocked</code>, do not prune.</p>
+<hr />
+<h2>4b. Import-source abstraction &amp; unified data model (decision: interface first)</h2>
+<p>The import layer uses the <strong>adapter pattern</strong>: every data source implements one SourceAdapter, all producing the unified SourceRecord; probe/classify/DR only face the unified model and stay decoupled from specific sources.</p>
+<h3>Unified output model: SourceRecord</h3>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Type</th>
+<th>Meaning</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>url</code></td>
+<td>str, required</td>
+<td>harvested page/site URL</td>
+</tr>
+<tr>
+<td><code>domain</code></td>
+<td>str</td>
+<td>derived (url → pay-level domain); if the adapter omits it, the pipeline normalizes</td>
+</tr>
+<tr>
+<td><code>source</code></td>
+<td>provenance object</td>
+<td><code>{kind, file, row_no}</code> — traceable to source file and row</td>
+</tr>
+<tr>
+<td><code>evidence</code></td>
+<td>evidence object</td>
+<td><code>{via_competitors: [domains…], inbound: n, corpus: "wdc-2012-08"}</code> — WDC-graph evidence priors; other sources fill what they have, empty otherwise</td>
+</tr>
+<tr>
+<td><code>hints</code></td>
+<td>hints object</td>
+<td><code>{category, language}</code> nullable — source-provided hints, pipeline inputs only, never conclusions</td>
+</tr>
+<tr>
+<td><code>raw</code></td>
+<td>JSON</td>
+<td>original row passed through, never lost</td>
+</tr>
+</tbody>
+</table>
+<h3>Abstract interface: SourceAdapter</h3>
+<pre><code>kind: str                                 source type id (&quot;wdc&quot; / &quot;similar:&lt;name&gt;&quot;)
+discover() -&gt; [SourceFile]                enumerate available data files (mtime/size, incremental-friendly)
+parse(file) -&gt; Iterator[SourceRecord]     lazy per-record parsing (large files never fully loaded)
+validate(rec) -&gt; [Issue]                  record-level validation: URL sane, required fields, obvious junk
+</code></pre>
+<p>Invariants (adapter discipline):
+1. <strong>Read-only, side-effect-free</strong>: no probing, no DB writes, no file changes
+2. Probe/classify/DR all run downstream in the pipeline — <strong>adding a source = one adapter + one YAML block, zero downstream changes</strong>
+3. Adapters never import downstream modules (one-way dependency: adapter → unified model)
+4. Large files are produced lazily record-by-record (a single WDC product file can be tens of thousands of rows)</p>
+<h3>Built-in adapters</h3>
+<table>
+<thead>
+<tr>
+<th>kind</th>
+<th>input</th>
+<th>status</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>wdc_competitor_links</code></td>
+<td><code>competitor-links-&lt;center&gt;.json</code> (product of import/harvest_competitor_links.py); evidence maps via_competitors→evidence.via_competitors, inbound→evidence.inbound</td>
+<td>defined, shipped with baseline code</td>
+</tr>
+<tr>
+<td><code>similar_csv</code> / <code>similar_json</code></td>
+<td>generic mapping adapters for other similar harvested data (column/field mapping lives in YAML)</td>
+<td>reserved, mapping pending samples</td>
+</tr>
+</tbody>
+</table>
+<p>Data flow: <code>SourceAdapter → SourceRecord → probe → classify → DR enrichment → PoolEntry (SQLite pool)</code></p>
+<hr />
+<h2>4c. Submit-path cache: record, reuse, keep fresh (round 5)</h2>
+<p>Submit endpoints discovered during probing are <strong>first-class assets</strong>, not
+transient probe output — they are persisted in <code>probe_cache</code> and reused:</p>
+<p><strong>Record</strong>
+- Every discovered entry (URL + form signature + captcha type + contact email) lands in <code>probe_cache</code> at probe time
+- <code>form_signature</code> = hash of the form's field names — the field mapping itself is the reusable piece
+- Successful submissions bump <code>success_count</code>; the proven chain (entry → fields → captcha handling) is what gets replayed</p>
+<p><strong>Reuse</strong>
+- Same domain matched again (new project, new submission round) → take the cached path directly, skip full re-probing (saves time and request quota)
+- Same-CMS / same-template sites (identical <code>form_signature</code>) → reuse the field mapping, only verify the URL</p>
+<p><strong>Keep fresh (update promptly on change)</strong>
+1. Light pre-submit check: HEAD/GET the cached <code>entry_url</code>; 404/redirect → re-probe before submitting
+2. Submit failure caused by form mismatch (missing/renamed fields) → mark <code>suspect</code>, re-probe immediately
+3. Low-frequency background audit (default every 30 days) keeps long-tail entries valid
+4. Every change appends to <code>history</code> (old path → new path → reason → timestamp); never overwritten silently, fully auditable</p>
+<hr />
+<h2>5. Matching &amp; scoring</h2>
+<pre><code>score = w1×category match (0/1)
+      + w2×language/geo match
+      + w3×wave priority (wave1=1, wave2=0.6, wave3=0)
+      + w4×DR normalized (dr/10)
+      + w5×competitor-evidence prior (via_competitors/inbound from import)
+      - exclusions (already submitted / rejected / excluded-domain list → never enqueued)
+</code></pre>
+<ul>
+<li>Weights and threshold live in YAML, overridable per project</li>
+<li><strong>Freshness boost (ratified 2026-11-18)</strong>: newly added <code>page</code> asset entries (e.g. a phase-2 product/game page) get a recency bonus as landing URLs, so phase-2 promotions outrank whole-site ones; exact factor lands with Phase 3 scoring</li>
+<li>Output enters the project's pending-confirmation queue sorted by score descending; scheduling is generated only after human selection</li>
+<li>Schedule generation: fill future dates from the confirmed pool respecting daily_quota</li>
+</ul>
+<hr />
+<h2>5a. Project assets: TDK, pages, articles, email copy (round 5)</h2>
+<p>Creating a project takes <strong>just a domain</strong>. The system then assembles four
+asset kinds, each with a three-level fallback: <code>provided</code> (user supplied) →
+<code>probed</code> (auto-discovered) → <code>template</code> (generic template).</p>
+<table>
+<thead>
+<tr>
+<th>Asset</th>
+<th>Used for</th>
+<th>provided</th>
+<th>probed</th>
+<th>fallback</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>TDK</strong> (title / description / keywords)</td>
+<td>directory-form title/desc fields, outreach copy</td>
+<td>user fills in</td>
+<td>fetch homepage meta + og: tags</td>
+<td>none — marked <code>missing</code>, flagged in the daily report for manual fill (TDK cannot be genericized; ratified: no placeholder degradation)</td>
+</tr>
+<tr>
+<td><strong>Level-1/2 page URLs</strong> (specific paths under the domain)</td>
+<td>landing-URL choice per submission</td>
+<td>user lists them (<strong>manual-only</strong>, ratified — no sitemap candidate discovery)</td>
+<td>—</td>
+<td>homepage only</td>
+</tr>
+<tr>
+<td><strong>Blog articles</strong></td>
+<td>guest_post / article submission bodies</td>
+<td>site's article list</td>
+<td>sitemap/RSS harvest</td>
+<td><strong>site-summary article</strong>: generic template filled with text derived from the site's own summary (ratified: no human input)</td>
+</tr>
+<tr>
+<td><strong>Outreach email copy</strong></td>
+<td>wave2 email sends</td>
+<td>project-specific template</td>
+<td>—</td>
+<td><strong>generic outreach email template</strong></td>
+</tr>
+</tbody>
+</table>
+<p>Rules:
+- Templates live in <code>templates/</code> with placeholders (<code>{domain}</code>, <code>{title}</code>, <code>{description}</code>, <code>{url}</code>, <code>{page}</code>); rendering injects the project's own assets — a project with real assets never sees template text
+- Probed assets (TDK, pages, articles) are <strong>cached in <code>project_asset</code> and reused</strong> — no refetch per submission, re-probe only on staleness
+- Every asset row records its <code>source</code> (provided/probed/template), so the daily report can show "this project is running on N template-backed assets" as a quality signal
+- Level-1/2 page URLs come from manual input only (ratified) — no auto-discovery; when absent, submissions land on the homepage</p>
+<hr />
+<h2>6. Config samples (YAML, not code)</h2>
+<pre><code class="language-yaml"># global.yaml —— global
+data_root: ~/outreach-scheduler-data   # user-data root: a folder named after THIS project only (never other private folders)
+sources:
+  competitor_links_glob: &quot;data/sources/competitor-links-*.json&quot;
+  similar: []          # other similar sources, listed one by one (format/fields pending samples)
+  exclude: [workbench_jsonl, prospector_store]   # explicitly not used
+scheduler:
+  run_at: &quot;09:30&quot;
+  timezone: Asia/Shanghai
+report:
+  email: &quot;&quot;            # empty = not sent; enable by configuring
+  smtp_env_file: config/secrets/smtp.env   # project-local, gitignored
+dr:
+  provider: openpagerank
+  cache_days: 30
+captcha:
+  channel: cua         # default free CUA channel (local Chrome)
+  solver_api: &quot;&quot;       # optional fallback; default empty = free-only mode
+  api_key_env: SOLVER_API_KEY
+  monthly_budget_usd: 0    # default 0 = paid solving off
+quotas:                  # guardrails (R-522/R-530 conventions)
+  per_domain_per_day: 100
+  per_project_per_day: 10
+
+# projects/&lt;project-domain&gt;.yaml —— one per project (lives under data_root/projects/, gitignored — real domains are user data and never enter the repo)
+domain: &lt;project-domain&gt;
+tags: [gaming, browser-games, english]
+daily_quota: 10
+channels: [form, email]
+templates: [dir-submit, outreach-mail]
+sender:                # optional per-project sender identity (multi-client)
+  name: &quot;&quot;             # unset -&gt; shared ops mailbox (global smtp_env_file)
+  email: &quot;&quot;
+  smtp_env_file: &quot;&quot;    # unset -&gt; global report.smtp_env_file
+report:
+  email: &quot;&quot;            # per-project client-report recipient; unset -&gt; global
+scoring:
+  min_score: 0.55
+  weights: {category: 0.35, geo: 0.15, wave: 0.20, dr: 0.15, via_competitors: 0.15}
+captcha:
+  auto_types: [none, recaptcha_v3, turnstile, recaptcha_v2, image, email_code]
+exclusions: []
+start_date: 2026-11-20
+</code></pre>
+<hr />
+<h2>7. Execution layer</h2>
+<ul>
+<li><strong>Scheduling</strong>: system cron launches the CLI (<code>scheduler run --date today</code>); no resident process, no external-toolchain dependency — this is the key choice for "independent of the host environment"</li>
+<li><strong>wave1 form submit</strong>: HTTP form channel first (requests + form rules); sites requiring a real browser are CUA-class — dependent on local Chrome — and are <strong>not automated in phase 1</strong>; they go to the human queue (trade-off: HTTP first, independence over automation)</li>
+<li><strong>wave2 email auto-send</strong>: SMTP, reusing Gmail app passwords (identity.py env pattern); quota key = domain (R-530 convention); per-project sender identity supported (<code>sender</code> block in project YAML, client-intake §5) — unset falls back to the shared ops mailbox</li>
+<li><strong>Failure handling</strong>: retries ≤3 (5xx/network only; 4xx never retried); exhausted retries go to the human queue and appear in the daily report</li>
+</ul>
+<h3>7.1 Captcha recognition (added requirement; channel ratified: CUA free first)</h3>
+<p>Probe already tags every endpoint's captcha_type; execution handles by tier. <strong>Free channels first; paid solver APIs are optional fallback only</strong>:</p>
+<table>
+<thead>
+<tr>
+<th>Type</th>
+<th>Strategy</th>
+<th>Cost</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>none</td>
+<td>submit directly</td>
+<td>0</td>
+</tr>
+<tr>
+<td>recaptcha_v3 / turnstile / invisible hcaptcha</td>
+<td>CUA (local real Chrome) loads the page; real fingerprint passes naturally</td>
+<td>0</td>
+</tr>
+<tr>
+<td>recaptcha_v2 / hcaptcha image challenge</td>
+<td><strong>CUA channel</strong>: challenge recognized and clicked inside the real browser</td>
+<td>0</td>
+</tr>
+<tr>
+<td>image captcha (self-drawn glyphs)</td>
+<td>local OCR first (free); on failure fall through to CUA</td>
+<td>0</td>
+</tr>
+<tr>
+<td>email_code</td>
+<td>IMAP auto-fetch code and backfill (mail_verify.py pattern)</td>
+<td>0</td>
+</tr>
+<tr>
+<td>unknown / CUA failure</td>
+<td>human queue</td>
+<td>0</td>
+</tr>
+<tr>
+<td>(optional fallback) paid solver API</td>
+<td>enabled only if CUA throughput proves insufficient; unconfigured by default</td>
+<td>~$1-3/1k</td>
+</tr>
+</tbody>
+</table>
+<p>CUA channel notes:
+- Depends on local Chrome + browser automation — the <strong>only local-environment dependency</strong> in the whole system (user-ratified)
+- A browser session that solved a captcha can be reused for that site's form submission (same fingerprint → higher pass rate)
+- Success rate / duration go to run_log and the daily report; sites failing repeatedly are auto-downgraded to the human queue
+- Paid solver config defaults to empty = runs in fully free mode</p>
+<p>Guardrails:
+1. CUA concurrency = 1 (single machine, single browser); same-day queues run per-site serially to avoid triggering anti-bot by parallel challenges
+2. Captcha failures are never retried (wastes quota) — straight to human queue
+3. If a paid API is ever enabled: monthly budget cap in config; exceeding it auto-downgrades</p>
+<h3>7.2 Full-automation guardrails (wave2 email risks)</h3>
+<ol>
+<li>Two-tier daily quotas: per domain / per project</li>
+<li>Warm-up period (new templates start low-volume for N days)</li>
+<li>Bounced/refused domains auto-enter the exclusion list</li>
+<li>Everything sent is auditable in run_log</li>
+</ol>
+<hr />
+<h2>8. Daily email report (configurable)</h2>
+<p>Five sections:
+1. Today's plan (item counts, by project, by channel)
+2. Yesterday's completions / failures detail
+3. Pending-confirmation queue (new matches count, top-10 preview)
+4. Pool changes (new entries, classification changes, DR updates, dead links)
+5. Human-action items (human-queue entries, decisions needed)</p>
+<p>Empty recipient = skip sending, run_log only. Send time follows scheduler config.</p>
+<hr />
+<h2>9. Independence &amp; data isolation</h2>
+<h3>9.1 No external-toolchain dependency</h3>
+<ul>
+<li>Python3 stdlib + PyYAML; HTTP via requests (the only third-party, degradable to urllib)</li>
+<li>No external agent toolchain, no MCP, no existing-system code — reads external <strong>product files</strong> only (competitor-links-*.json etc.)</li>
+<li>Credentials read only from env vars / env files, never in the codebase</li>
+<li><strong>Paths never reference other private folders</strong> (user rule, 2026-11-18): all paths point inside this project folder, or to a folder named after this project (e.g. the outreach-scheduler-data folder in the home directory); no home dot-folder paths and no sibling-repo paths</li>
+</ul>
+<h3>9.2 User-data vs repo-code isolation (hard rule)</h3>
+<ul>
+<li><strong>GitHub carries zero private information</strong>: repo contains source, docs, YAML structure samples (placeholder values) only</li>
+<li><strong>User data enters via "new-project import"</strong>: the <code>import</code> CLI reads external data files (WDC products, harvested JSON/CSV) into the project-private <code>data/</code> (SQLite + raw files); <code>data/</code>, <code>config/secrets*</code>, <code>*.env</code> are all gitignored, never uploaded</li>
+<li>The data dir can move out of the repo entirely (set <code>data_root</code> to an external folder named after this project, like <code>~/outreach-scheduler-data/</code>) — machine moves / reinstalls only need config + data dir</li>
+<li>Pre-commit checklist (automated): private-scan checks staged files for emails/passwords/domain-ledger signatures; any hit blocks the commit</li>
+<li><strong>Domains never appear in file names or file contents</strong> (user rule, 2026-11-18): product files carry neutral content-hashed names; the name mapping lives only in the gitignored local index; own-site/competitor domains in docs and code are replaced with placeholders</li>
+<li>Raw WDC graph data (~3GB) never enters the repo or git; dl.sh downloads to a local cache on demand</li>
+</ul>
+<h3>9.3 The only local dependency</h3>
+<ul>
+<li>The CUA captcha channel depends on local Chrome + browser automation (ratified: CUA free); nothing else does — import/probe/match/plan/email are pure HTTP + SQLite</li>
+<li>CUA is used only for captchas and fingerprint-sensitive submissions; ordinary HTTP forms never launch a browser</li>
+</ul>
+<h3>9.4 Doc language convention</h3>
+<ul>
+<li>English-primary <code>.md</code>; Chinese translations in <code>.zh.md</code> (e.g. <code>DESIGN.md</code> / <code>DESIGN.zh.md</code>)</li>
+</ul>
+<hr />
+<h2>10. Open items / next steps</h2>
+<ol>
+<li>~~Round-5 ratification~~ <strong>All ratified (2026-11-18):</strong></li>
+<li>TDK probing fails → mark <code>missing</code> + daily-report reminder (no placeholder degradation)</li>
+<li>Generic article template = filled with site-summary-derived text, no human input</li>
+<li>Level-1/2 page URLs = manual input only (no sitemap candidates)</li>
+<li>
+<p>Submit-path freshness audit = 30 days</p>
+</li>
+<li>
+<p>~~Exact WDC input~~ <strong>Confirmed (2026-11-18)</strong>:</p>
+</li>
+<li>Input products = <code>competitor-links-&lt;center&gt;.json</code> (existing 4 product files copied into the project; file names neutralized by content hash; the mapping lives only in the local gitignored index)</li>
+<li>Processing code copied as-is into <code>outreach-scheduler/import/</code> (harvest_competitor_links.py, competitor_backlinks.py, export_wdc_fast.py, dl.sh + README), no private info</li>
+<li>Raw graph data ~3GB cached locally, never in git</li>
+<li>"Other similar data" samples still pending (one JSON, one CSV)</li>
+<li><strong>Paid solver</strong>: default off (CUA free channel first); whether to abandon paid APIs entirely will be decided after measuring CUA throughput</li>
+<li>Repo name confirmation: <code>outreach-scheduler</code> (alternatives: backlink-outreach-ops / bl-campaign-pilot)</li>
+<li>git init + GitHub repo (hhool/outreach-scheduler): <strong>before first push, land .gitignore (data/, <em>.env, config/secrets</em>) + private-scan hook</strong> (§9.2 hard rule)</li>
+<li>Phase 1 architecture decision list: directory structure, table DDL, competitor-links→pool field mapping (via_competitors/inbound kept as scoring priors), probe rule list</li>
+<li>wave2 full-auto email needs a detail pass: templates &amp; warm-up policy</li>
+<li>First project: use the site with the richest products (findable via the local mapping), validating the full chain import → probe → match → confirm → execute → report</li>
+</ol></div>
+<div data-lang-en="0" style="display:none"><h1 style="display:none">outreach-scheduler 设计讨论稿</h1><h1>outreach-scheduler 设计讨论稿</h1>
+<p>日期：2026-11-18 · 状态：讨论稿（no coding，待确认后进入架构决策）
+本稿落盘于 outreach-scheduler/ 项目文件夹，后期独立于任何外部工具链运行。</p>
+<hr />
+<h2>0. 定位结论</h2>
+<p>4 条需求 = 一个「外联计划调度中心」。建议独立仓库 <code>outreach-scheduler</code>，职责四层：</p>
+<ol>
+<li><strong>导入层</strong>：外链库 → 外链池（单向导入，只进不出，不写回源）</li>
+<li><strong>池</strong>：SQLite 单文件，自动分类 + DR 权重</li>
+<li><strong>计划层</strong>：项目（域名）→ 自动匹配 → <strong>人工确认一道闸</strong> → 可配置发送计划</li>
+<li><strong>执行层</strong>：周期自动执行（wave1 表单直投 + wave2 邮件自动发）+ 每日邮件汇报</li>
+</ol>
+<p>与现有系统的关系：
+- <strong>导入源 = WDC 收割数据及其他同类外链数据</strong>（本系统不写回源）
+- workbench targets.jsonl / prospector <strong>不作为导入源</strong>，也不再是本系统的上游；workbench 保留其自身评审/台账角色不变
+- 旧邮件系统的 R-520（人工发送）惯例仅适用于该系统本身；本系统独立实施自动发送，但保留「失败/可疑转人工队列」逃生门</p>
+<p>关键设计影响：WDC/同类数据是<strong>原始竞品反链</strong>（指向竞品的外部链接），不是现成的「可投递平台清单」。因此导入层必须包含<strong>探测阶段</strong>（probe）：对每条 URL 做 HTTP 探测，识别「是否可投递」——有提交表单/注册入口/联系邮箱的才升级为机会条目，其余沉淀为普通池条目。</p>
+<hr />
+<h2>1. 需求拍板结果（2026-11-18 用户确认，两轮）</h2>
+<table>
+<thead>
+<tr>
+<th>#</th>
+<th>问题</th>
+<th>结论</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>1</td>
+<td>外链库来源</td>
+<td><strong>WDC 数据 + 其他类似外链收割数据</strong>。不使用 workbench targets.jsonl + prospector 导出</td>
+</tr>
+<tr>
+<td>1a</td>
+<td>导入源设计</td>
+<td><strong>先定义抽象接口 + 统一输出数据模型</strong>（§4b SourceAdapter/SourceRecord），新源以适配器接入，下游零改动</td>
+</tr>
+<tr>
+<td>1b</td>
+<td>WDC 代码复制</td>
+<td>内部收割仓库的 WDC 处理逻辑 4 文件已原样 cp 到 <code>import/</code>（harvest_competitor_links.py、competitor_backlinks.py、export_wdc_fast.py、dl.sh + README）</td>
+</tr>
+<tr>
+<td>1b</td>
+<td>验证码识别</td>
+<td><strong>追加</strong>。执行层需具备验证码识别能力（分级策略，见 §7），过不了的转人工队列</td>
+</tr>
+<tr>
+<td>2</td>
+<td>DR 权重</td>
+<td><strong>加</strong>。免费源可用即启用：Keywords Everywhere Open PageRank（免费 30k 域名/月，0-10 分）；Moz 免费层 50 rows/月需信用卡，仅作补充不依赖</td>
+</tr>
+<tr>
+<td>3</td>
+<td>执行边界</td>
+<td><strong>全部自动</strong>（wave1 表单直投自动、wave2 邮件自动发），不保留「只出清单」模式</td>
+</tr>
+<tr>
+<td>4</td>
+<td>邮件汇报</td>
+<td>自动发；<strong>收件人默认空 = 不发送</strong>，配置后启用</td>
+</tr>
+<tr>
+<td>5</td>
+<td>匹配后人工确认</td>
+<td><strong>需要</strong>。自动匹配 → 待确认队列 → 人工勾选 → 进入已排计划 → 执行器只跑已确认项</td>
+</tr>
+<tr>
+<td>6</td>
+<td>文档语言</td>
+<td>英文主文档 <code>.md</code> / 中文 <code>.zh.md</code></td>
+</tr>
+<tr>
+<td>7</td>
+<td>提交路径（第五轮）</td>
+<td><strong>自己发现的 submit 路径要记录、后续复用</strong>；路径变化及时校验更新（§4c）</td>
+</tr>
+<tr>
+<td>8</td>
+<td>项目资产（第五轮）</td>
+<td><strong>新建项目输入 = 域名。</strong> 域名下站点 TDK、一级二级地址、博文文章、外联邮件内容按项目归集：无则探测，探测也无则通用模板兜底（§5a）。同日拍板：TDK 缺失保持标记不降级；文章兜底=站点摘要生成；页面地址仅人工输入（无 sitemap 候选）；路径巡检 30 天</td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h2>2. 架构与数据流</h2>
+<pre><code>导入源                          本仓库（独立运行）
+┌──────────────────┐   ┌──────────────────────────────────────────────┐
+│ WDC 收割数据      │──►│ ①导入+探测层 ──► ②外链池(SQLite)              │
+│ 其他同类外链数据  │   │  去重→HTTP探测(入口/表单/验证码类型/邮箱)      │
+│ (原始竞品反链)    │   │  →分类+DR                                    │
+└──────────────────┘   └──────────────────────┬───────────────────────┘
+                                    ┌─────────▼──────────┐
+                                    │ ③计划层             │
+   人工确认闸 ────────────────────►  │ 项目(域名)→自动匹配  │
+   （待确认队列勾选）                │ →评分→待确认队列     │
+                                    └─────────┬──────────┘
+                                    ┌─────────▼──────────┐
+                                    │ ④执行层             │
+                                    │ cron 拉起 CLI：      │
+                                    │ 取当日计划→自动执行   │
+                                    │ (含验证码分级识别)    │
+                                    │ →结果回写→SMTP 汇报  │
+                                    └─────────────────────┘
+</code></pre>
+<p>要点：
+- 池是本系统的唯一真相源；导入按「域名+页面 URL」去重，source 字段保留出处
+- WDC/同类数据是原始竞品反链，<strong>探测阶段决定「是否可投递」</strong>：有提交入口/联系方式的升级为机会条目，其余沉淀为普通池条目
+- 匹配与执行之间强制一道人工确认闸（拍板 #5）
+- 执行器只消费「已确认且已排期」的计划项，绝不碰 pending 状态</p>
+<hr />
+<h2>3. 数据模型（SQLite 表草案）</h2>
+<pre><code>pool        池条目
+  id, source(wdc|similar:&lt;name&gt;), source_id, url, domain,
+  anchor_text, target_domain(反链指向的竞品域),
+  entry_url(探测出的提交/注册入口),
+  has_submit_form, form_fields(JSON), captcha_type(none|recaptcha_v2|
+    recaptcha_v3|turnstile|hcaptcha|image|email_code|unknown),
+  contact_email, probe_state(unprobed|probed|unreachable),
+  site_type(目录站|书签站|SaaS目录|启动平台|博客|论坛|…),
+  submit_type(auto|register|free|listing|posting|guest_post|pitch|…),
+  wave(1|2|3), category(gaming|parenting|tools|general|…),
+  dr(0-10 Open PageRank), language, geo,
+  status(active|dead|bot-blocked|rejected),
+  first_seen, last_seen, raw(JSON 原始字段)
+
+project     投放项目
+  id, domain, tags(JSON), status, created_at
+
+match       匹配结果
+  id, project_id, pool_id, score, score_detail(JSON),
+  state(pending|confirmed|rejected), confirmed_at
+
+plan        排期与执行记录
+  id, project_id, match_id, scheduled_date, channel(form|email),
+  template_id, state(queued|sent|failed|blocked|skipped),
+  captcha_solved(0|1), captcha_cost, executed_at, result_note
+
+run_log     执行日志
+  id, ts, action, target, result, note
+
+probe_cache  提交路径缓存（记录的发现，可复用；§4c）
+  id, domain, entry_url, form_signature(表单字段名 hash), captcha_type,
+  contact_email, success_count, last_probed, last_verified,
+  state(valid|changed|gone|blocked),
+  history(JSON: [{ts, old_entry, new_entry, reason}])
+
+project_asset  项目站点资产（§5a）
+  id, project_id, kind(tdk|page|article|email_copy),
+  source(provided|probed|template), content, url(可空), fetched_at
+</code></pre>
+<p>配置不走数据库，全部 YAML 文件（见 §6），改配置即改行为。</p>
+<hr />
+<h2>4. 自动分类流水线（导入时执行）</h2>
+<p><strong>第一步：HTTP 探测（probe）</strong>——WDC/同类数据是原始反链，必须先探测才能投递：
+- 抓取页面，识别提交/注册入口（submit.php/add-link/register 等模式 + 表单 DOM 特征）
+- 提取表单字段、<strong>验证码类型</strong>（recaptcha_v2/v3、turnstile、hcaptcha、图形码、邮箱验证码、无）、联系邮箱
+- 无入口的条目标 unprobed→沉淀，不进投递匹配；探测结果缓存，避免重复抓</p>
+<p><strong>第二步：三层分类</strong>，全部自动：</p>
+<ol>
+<li><strong>site_type</strong>：按 submit_type + DOM/URL 特征归目录站/书签站/SaaS 目录/启动平台/博客/论坛</li>
+<li><strong>wave 派生</strong>：按主 submit_type 判定；wave 字段显式指定优先于派生</li>
+<li><strong>category</strong>：关键词规则表（gaming/parenting/tools/…），先规则后人工修正，规则表放配置文件可扩充</li>
+</ol>
+<p>DR 补齐：
+- Open PageRank 批量查询（按域名去重、本地缓存、永不重复查）
+- <strong>已知坑</strong>：免费钥绑定单一出口 IP，换网络会 403 address_error（claude-seo 已处理过该错误识别），需在账户页绑定本机出口 IP，每周可改一次
+- DR 进匹配打分权重（§5），也用于池内分层统计</p>
+<p>存活判定沿用现有口径：403/412/429 = Cloudflare 反爬，不是死链，保留并标 bot-blocked，不误杀。</p>
+<hr />
+<h2>4b. 导入源抽象接口与统一数据模型（拍板：先定接口，后接源）</h2>
+<p>导入层采用<strong>适配器模式</strong>：每个数据源实现一个 SourceAdapter，全部输出统一 SourceRecord；探测/分类/DR 只面向统一模型，与具体源解耦。</p>
+<h3>统一输出模型：SourceRecord</h3>
+<table>
+<thead>
+<tr>
+<th>字段</th>
+<th>类型</th>
+<th>说明</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>url</code></td>
+<td>str，必填</td>
+<td>收割到的页面/站点 URL</td>
+</tr>
+<tr>
+<td><code>domain</code></td>
+<td>str</td>
+<td>派生（url → pay-level-domain），适配器不填由管线归一</td>
+</tr>
+<tr>
+<td><code>source</code></td>
+<td>溯源对象</td>
+<td><code>{kind, file, row_no}</code>——可追溯到源文件与行</td>
+</tr>
+<tr>
+<td><code>evidence</code></td>
+<td>证据对象</td>
+<td><code>{via_competitors: [域名…], inbound: n, corpus: "wdc-2012-08"}</code>——WDC 图的证据先验；其他源有对应证据就填，没有为空</td>
+</tr>
+<tr>
+<td><code>hints</code></td>
+<td>提示对象</td>
+<td><code>{category, language}</code> 可空——源自带的分类/语言提示，仅作管线输入不作结论</td>
+</tr>
+<tr>
+<td><code>raw</code></td>
+<td>JSON</td>
+<td>原始行透传，永不丢失</td>
+</tr>
+</tbody>
+</table>
+<h3>抽象接口：SourceAdapter</h3>
+<pre><code>kind: str                                 源类型标识（&quot;wdc&quot; / &quot;similar:&lt;name&gt;&quot;）
+discover() -&gt; [SourceFile]                枚举该源当前可用的数据文件（含 mtime/大小，支持增量）
+parse(file) -&gt; Iterator[SourceRecord]     逐条解析为统一模型（惰性，大文件不整载）
+validate(rec) -&gt; [Issue]                  记录级校验：URL 合法、必填字段、明显脏数据
+</code></pre>
+<p>不变式（适配器纪律）：
+1. <strong>只读、无副作用</strong>：不探测、不写库、不改任何文件
+2. 探测/分类/DR 全部在管线下游统一执行——<strong>新增导入源 = 写一个适配器 + 一段 YAML，下游零改动</strong>
+3. 适配器不 import 下游模块（单向依赖：adapter → 统一模型）
+4. 大文件惰性逐条产出（WDC 产物单文件可数万行）</p>
+<h3>内置适配器</h3>
+<table>
+<thead>
+<tr>
+<th>kind</th>
+<th>输入</th>
+<th>状态</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>wdc_competitor_links</code></td>
+<td><code>competitor-links-&lt;center&gt;.json</code>（import/harvest_competitor_links.py 产物）；evidence 映射 via_competitors→evidence.via_competitors、inbound→evidence.inbound</td>
+<td>已定义，随基线代码就绪</td>
+</tr>
+<tr>
+<td><code>similar_csv</code> / <code>similar_json</code></td>
+<td>其他同类收割数据的通用映射适配器（列名/字段映射进 YAML）</td>
+<td>预留，待样例后定义映射</td>
+</tr>
+</tbody>
+</table>
+<p>数据流：<code>SourceAdapter → SourceRecord → probe(探测) → classify(分类) → DR 补齐 → PoolEntry(SQLite 池)</code></p>
+<hr />
+<h2>4c. 提交路径缓存：记录、复用、保鲜（第五轮需求）</h2>
+<p>探测阶段发现的 submit 入口是<strong>一等资产</strong>，不是探测的临时输出——持久化到 <code>probe_cache</code> 并复用：</p>
+<p><strong>记录</strong>
+- 每个发现的入口（URL + 表单签名 + 验证码类型 + 联系邮箱）在探测时即入 <code>probe_cache</code>
+- <code>form_signature</code> = 表单字段名的 hash——字段映射本身就是可复用的部分
+- 提交成功递增 <code>success_count</code>；被验证过的链路（入口 → 字段 → 验证码处理）才是复用的对象</p>
+<p><strong>复用</strong>
+- 同域名再次匹配/投递（新项目、新一轮）→ 直接取缓存路径，跳过全量重探测（省时省请求配额）
+- 同 CMS / 同模板站（<code>form_signature</code> 相同）→ 复用字段映射，只校验 URL</p>
+<p><strong>保鲜（路径变化及时更新）</strong>
+1. 提交前轻校验：HEAD/GET 缓存的 <code>entry_url</code>；404/跳转 → 先重探测再提交
+2. 因表单不匹配（字段缺失/改名）导致的提交失败 → 标记 <code>suspect</code>，立即重探测
+3. 后台低频巡检（默认 30 天/次）保证长尾条目持续有效
+4. 每次变更追加进 <code>history</code>（旧路径 → 新路径 → 原因 → 时间），不静默覆盖，全程可审计</p>
+<hr />
+<h2>5. 匹配与打分</h2>
+<pre><code>score = w1×类别匹配(0/1)
+      + w2×语言/地区匹配
+      + w3×wave 优先(wave1=1, wave2=0.6, wave3=0)
+      + w4×DR 归一化(dr/10)
+      + w5×fit_score 先验(导入自带)
+      - 排除项（已投递/已拒绝/排除域名列表 → 直接不入队）
+</code></pre>
+<ul>
+<li>权重和阈值进 YAML，可按项目覆盖</li>
+<li><strong>新鲜度加权（2026-11-18 拍板）</strong>：新加入的 <code>page</code> 资产条目（如二期产品/游戏页）作为落地 URL 获得新鲜度加分，二期推广优先于整站条目；具体因子随 Phase 3 打分落地</li>
+<li>产出按 score 降序进入该项目「待确认队列」，人工勾选确认后才生成排期</li>
+<li>排期生成规则：按 daily_quota 从确认池依次填充未来日期</li>
+</ul>
+<hr />
+<h2>5a. 项目资产：TDK、页面、文章、邮件内容（第五轮需求）</h2>
+<p>新建项目只输入<strong>一个域名</strong>。系统随后归集四类资产，每类三级降级：
+<code>provided</code>（用户给）→ <code>probed</code>（自动探测）→ <code>template</code>（通用模板）。</p>
+<table>
+<thead>
+<tr>
+<th>资产</th>
+<th>用途</th>
+<th>provided</th>
+<th>probed</th>
+<th>兜底</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>TDK</strong>（title/description/keywords）</td>
+<td>目录表单 title/desc 字段、外联文案</td>
+<td>用户填写</td>
+<td>抓首页 meta + og: 标签</td>
+<td>无——标记 <code>missing</code>，日报提醒人工补（TDK 无法通用化；拍板：不降级占位）</td>
+</tr>
+<tr>
+<td><strong>一级/二级地址</strong>（域名下具体路径）</td>
+<td>每次提交选择落地 URL</td>
+<td>用户列出（<strong>仅人工输入</strong>，拍板——无 sitemap 候选发现）</td>
+<td>—</td>
+<td>仅用首页</td>
+</tr>
+<tr>
+<td><strong>博文文章</strong></td>
+<td>guest_post / 投稿正文</td>
+<td>站点文章列表</td>
+<td>sitemap/RSS 收割</td>
+<td><strong>站点摘要文章</strong>：通用模板由站点自身摘要生成的文本填充（拍板：无人工输入）</td>
+</tr>
+<tr>
+<td><strong>外联邮件内容</strong></td>
+<td>wave2 邮件</td>
+<td>项目专属模板</td>
+<td>—</td>
+<td><strong>通用外联邮件模板</strong></td>
+</tr>
+</tbody>
+</table>
+<p>规则：
+- 模板放 <code>templates/</code>，带占位符（<code>{domain}</code> <code>{title}</code> <code>{description}</code> <code>{url}</code> <code>{page}</code>）；渲染时注入项目自身资产——有真实资产的项目永远不会看到模板占位文本
+- 探测到的资产（TDK/页面/文章）<strong>缓存进 <code>project_asset</code> 并复用</strong>——不随提交重抓，只在过期时重探
+- 每条资产记录 <code>source</code>（provided/probed/template），日报可呈现「该项目有 N 项资产靠模板兜底」作为质量信号
+- 一级/二级地址仅来自人工输入（拍板）——不做自动发现；缺失时提交一律落在首页</p>
+<hr />
+<h2>6. 配置文件样例（YAML，非代码）</h2>
+<pre><code class="language-yaml"># global.yaml —— 全局
+data_root: ~/outreach-scheduler-data   # 用户数据根目录：只允许以本项目命名的文件夹（不涉及其他私人文件夹）
+sources:
+  competitor_links_glob: &quot;data/sources/competitor-links-*.json&quot;   # 产物已复制进本项目（gitignored）
+  similar: []          # 其他同类数据源，逐个列出（格式/字段待样例确认）
+  exclude: [workbench_jsonl, prospector_store]   # 明确不用
+scheduler:
+  run_at: &quot;09:30&quot;
+  timezone: Asia/Shanghai
+report:
+  email: &quot;&quot;            # 默认空=不发；配置后启用
+  smtp_env_file: config/secrets/smtp.env   # 项目内路径，gitignored
+dr:
+  provider: openpagerank
+  cache_days: 30
+captcha:
+  channel: cua         # 默认 CUA 免费通道（本机 Chrome）
+  solver_api: &quot;&quot;       # 可选兜底，默认空=纯免费模式
+  api_key_env: SOLVER_API_KEY
+  monthly_budget_usd: 0    # 默认 0 = 不启用付费
+quotas:                  # 护栏，沿用 R-522/R-530 口径
+  per_domain_per_day: 100
+  per_project_per_day: 10
+
+# projects/&lt;project-domain&gt;.yaml —— 每项目一份（放 data_root/projects/ 下，gitignored——真实域名属用户数据，不入仓库）
+domain: &lt;project-domain&gt;
+tags: [gaming, browser-games, english]
+daily_quota: 10
+channels: [form, email]
+templates: [dir-submit, outreach-mail]
+sender:                # 可选：按项目发件身份（多客户）
+  name: &quot;&quot;             # 不填 -&gt; 共享运营邮箱（全局 smtp_env_file）
+  email: &quot;&quot;
+  smtp_env_file: &quot;&quot;    # 不填 -&gt; 全局 report.smtp_env_file
+report:
+  email: &quot;&quot;            # 按项目的客户报告收件人；不填 -&gt; 全局
+scoring:
+  min_score: 0.55
+  weights: {category: 0.35, geo: 0.15, wave: 0.20, dr: 0.15, via_competitors: 0.15}
+captcha:
+  auto_types: [none, recaptcha_v3, turnstile, recaptcha_v2, image, email_code]
+exclusions: []
+start_date: 2026-11-20
+</code></pre>
+<hr />
+<h2>7. 执行层</h2>
+<ul>
+<li><strong>调度方式</strong>：系统 cron 拉起 CLI（<code>scheduler run --date today</code>），无常驻进程、无外部工具链依赖——这是「独立运行」的关键选择</li>
+<li><strong>wave1 表单直投</strong>：HTTP 表单通道优先（requests + 表单规则）；需要真实浏览器的站点属 CUA 类，依赖本机 Chrome，<strong>第一阶段不自动</strong>，进人工队列（独立性 vs 自动化的取舍：HTTP 优先）</li>
+<li><strong>wave2 邮件自动发</strong>：SMTP 发送，复用 Gmail 应用密码（identity.py 的 env 模式），配额键=域名（R-530 口径）；支持按项目发件身份（项目 YAML 的 <code>sender</code> 块，client-intake §5）——不填回落共享运营邮箱</li>
+<li><strong>失败处理</strong>：失败重试 ≤3 次（仅 5xx/网络类，4xx 不重试），重试耗尽转人工队列并在日报列出</li>
+</ul>
+<h3>7.1 验证码识别（追加需求，通道确认：CUA 免费优先）</h3>
+<p>探测阶段已标注每个入口的 captcha_type，执行时按类型分级处理。<strong>免费通道优先，付费打码 API 仅为可选兜底</strong>：</p>
+<table>
+<thead>
+<tr>
+<th>类型</th>
+<th>策略</th>
+<th>成本</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>none</td>
+<td>直接提交</td>
+<td>0</td>
+</tr>
+<tr>
+<td>recaptcha_v3 / turnstile / hcaptcha 隐形</td>
+<td>CUA（本机真实 Chrome）加载页面，真实指纹自然通过</td>
+<td>0</td>
+</tr>
+<tr>
+<td>recaptcha_v2 / hcaptcha 图像挑战</td>
+<td><strong>CUA 通道</strong>：真实浏览器内完成挑战识别与点击</td>
+<td>0</td>
+</tr>
+<tr>
+<td>图形验证码（自绘字符）</td>
+<td>先本地 OCR（免费）；失败走 CUA 通道</td>
+<td>0</td>
+</tr>
+<tr>
+<td>email_code（邮箱验证码）</td>
+<td>IMAP 自动取码回填（mail_verify.py 模式）</td>
+<td>0</td>
+</tr>
+<tr>
+<td>unknown / CUA 失败</td>
+<td>转人工队列</td>
+<td>0</td>
+</tr>
+<tr>
+<td>（可选兜底）第三方打码 API</td>
+<td>仅当 CUA 通道吞吐不足时启用，默认不配</td>
+<td>~$1-3/千次</td>
+</tr>
+</tbody>
+</table>
+<p>CUA 通道说明：
+- 依赖本机 Chrome + 浏览器自动化，是全系统<strong>唯一的本机环境依赖</strong>（用户已确认接受）
+- 验证码成功的浏览器会话可复用于同一站点的表单提交（指纹一致，过审率高）
+- 成功率/耗时进 run_log，日报呈现；连续失败的站点自动降级人工队列
+- 付费打码 API 配置默认为空 = 完全免费模式运行</p>
+<p>护栏：
+1. CUA 通道并发=1（单机单浏览器），当日队列按站点串行，避免并发挑战触发风控
+2. 验证码失败不重试（浪费配额），直接转人工
+3. 若未来启用付费 API：月预算上限进配置，超限自动降级</p>
+<h3>7.2 全自动护栏（wave2 邮件直发的风险控制）</h3>
+<ol>
+<li>每域名/每项目双层每日配额</li>
+<li>发送预热期（新模板前 N 天低量）</li>
+<li>退信/拒收域名自动进排除列表</li>
+<li>所有已发内容进 run_log 可审计</li>
+</ol>
+<hr />
+<h2>8. 每日邮件汇报（可配置）</h2>
+<p>内容五段：
+1. 今日计划（条目数、分项目、分通道）
+2. 昨日完成 / 失败明细
+3. 待人工确认队列（新匹配数量，附 top10 预览）
+4. 池变化（新增、分类变化、DR 更新、死链）
+5. 待人工处理项（转人工队列、需拍板事项）</p>
+<p>收件人空 = 跳过发送，仅落盘 run_log。发送时间随 scheduler 配置。</p>
+<hr />
+<h2>9. 独立性与数据隔离</h2>
+<h3>9.1 无外部工具链依赖</h3>
+<ul>
+<li>纯 Python3 标准库 + PyYAML；HTTP 用 requests（唯一第三方，可降级为 urllib）</li>
+<li>不依赖任何外部 agent 工具链、MCP、现有系统代码——只读外部<strong>产物文件</strong>（competitor-links-*.json 等）</li>
+<li>凭据只从环境变量/env 文件读，不进代码库</li>
+</ul>
+<h3>9.2 用户数据与仓库代码隔离（硬规则）</h3>
+<ul>
+<li><strong>GitHub 源码零私有信息</strong>：仓库只含源码、文档、YAML 结构样例（占位值）</li>
+<li><strong>用户数据以「新建工程导入」方式进入</strong>：<code>import</code> CLI 把外部数据文件（WDC 产物、收割 JSON/CSV）读入工程私有数据目录 <code>data/</code>（SQLite + 原始文件），<code>data/</code>、<code>config/secrets*</code>、<code>*.env</code> 全部进 .gitignore，永不上传</li>
+<li>数据目录可整体迁出仓库（配置 <code>data_root</code> 指向以本项目命名的仓库外路径，如 <code>~/outreach-scheduler-data/</code>，不涉及其他私人文件夹），实现代码与数据彻底分离——换机器/重装只带配置与数据目录</li>
+<li>排查清单（提交前自动检查）：private-scan 工具扫描待提交文件中的邮箱/密码/域名台账特征，命中即拒绝提交</li>
+<li>WDC 原始图数据（~3GB）不入库不入 git，由 dl.sh 按需下载到本地缓存</li>
+</ul>
+<h3>9.3 唯一本机依赖</h3>
+<ul>
+<li>CUA 验证码通道依赖本机 Chrome + 浏览器自动化（用户拍板：CUA 免费）；除此之外无其他环境依赖，其余流程（导入/探测/匹配/计划/邮件）纯 HTTP + SQLite</li>
+<li>CUA 仅用于验证码与需要真实指纹的提交，普通 HTTP 表单不启浏览器</li>
+</ul>
+<hr />
+<h2>10. 待拍板 / 后续步骤</h2>
+<ol>
+<li>~~第五轮拍板~~ <strong>全部确认（2026-11-18）：</strong></li>
+<li>TDK 探测失败 → 标记 <code>missing</code> + 日报提醒（不降级占位）</li>
+<li>通用文章模板 = 站点摘要生成的文本填充，无人工输入</li>
+<li>一级二级地址 = 仅人工输入（无 sitemap 候选）</li>
+<li>
+<p>提交路径保鲜巡检 = 30 天</p>
+</li>
+<li>
+<p>~~WDC 数据的确切输入~~ <strong>已确认（2026-11-18）</strong>：</p>
+</li>
+<li>输入产物 = 内部收割仓库的 <code>competitor-links-&lt;center&gt;.json</code>（路径不入库）（现有 4 份产物文件已复制进项目，文件名按内容哈希中性化，映射表仅存于本地 data/sources/index.json）</li>
+<li>处理代码已原样复制到 <code>outreach-scheduler/import/</code>（harvest_competitor_links.py、competitor_backlinks.py、export_wdc_fast.py、dl.sh + README 链路说明），无私有信息</li>
+<li>原始图数据 ~3GB 本地缓存不入 git</li>
+<li>「其他类似数据」仍待提供样例（JSON/CSV 各一份）</li>
+<li><strong>打码服务商</strong>：默认不启用（CUA 免费通道优先）；付费 API 是否完全放弃，待 CUA 实测吞吐后再定</li>
+<li>仓库命名确认：<code>outreach-scheduler</code>（备选 backlink-outreach-ops / bl-campaign-pilot）</li>
+<li>git init + GitHub 建仓（hhool/outreach-scheduler）：<strong>提交前先落 .gitignore（data/、<em>.env、config/secrets</em>）+ private-scan 钩子</strong>（§9.2 硬规则）</li>
+<li>Phase 1 架构决策清单：目录结构、建表 SQL、competitor-links→pool 字段映射表（via_competitors/inbound 保留为打分先验）、探测规则清单</li>
+<li>wave2 邮件全自动的模板与预热策略需要一版细则</li>
+<li>首个项目建议用产物最全的现成站点（本地映射表可查），验证「导入→探测→匹配→确认→执行→汇报」全链路</li>
+</ol>
+<blockquote>
+<p><strong>路径规范（2026-11-18 用户规则）</strong>：仓库内容中的路径一律指向本项目文件夹或以本项目命名的文件夹
+（如 <code>~/outreach-scheduler-data/</code>），不得出现其他私人文件夹（内部工具链/凭据目录等）。</p>
+</blockquote></div></article></main>
+<footer>bilingual docs · built from .md sources</footer>
+<script>
+(function(){
+  var root=document.documentElement;
+  var langBtn=document.getElementById('lang'), themeBtn=document.getElementById('theme');
+  function setLang(l){
+    root.setAttribute('data-lang',l);
+    document.querySelectorAll('[data-lang-en]').forEach(function(el){
+      el.style.display = (el.getAttribute('data-lang-en')==='1') === (l==='en') ? '' : 'none';
+    });
+    localStorage.setItem('docs-lang',l);
+    langBtn.textContent = l==='en' ? '中文' : 'English';
+    document.title = document.querySelector(l==='en'?'[data-lang-en="1"] h1':'[data-lang-en="0"] h1')
+      ? (document.querySelector(l==='en'?'[data-lang-en="1"] h1':'[data-lang-en="0"] h1').textContent + ' — outreach-scheduler docs')
+      : document.title;
+    if(window.location.pathname.endsWith('index.html')){
+      document.querySelectorAll('nav a').forEach(function(a){
+        a.textContent = l==='en' ? a.getAttribute('data-en') : a.getAttribute('data-zh');
+      });
+    }
+  }
+  function setTheme(t){
+    root.setAttribute('data-theme',t);
+    localStorage.setItem('docs-theme',t);
+    themeBtn.textContent = t==='day' ? '夜视' : '白天';
+  }
+  langBtn.addEventListener('click',function(){
+    setLang(root.getAttribute('data-lang')==='en'?'zh':'en');
+  });
+  themeBtn.addEventListener('click',function(){
+    setTheme(root.getAttribute('data-theme')==='day'?'night':'day');
+  });
+  setTheme(localStorage.getItem('docs-theme')||'day');
+  setLang(localStorage.getItem('docs-lang')||'en');
+})();
+</script>
+</body>
+</html>

@@ -1,0 +1,526 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="day">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Client intake &amp; operations handbook — outreach-scheduler docs</title>
+<style>
+:root[data-theme="day"] {
+  --bg:#f7f7f5; --panel:#ffffff; --text:#1a1a1a; --muted:#6b6b6b;
+  --border:#dcdcd8; --accent:#2563eb; --code-bg:#f1f1ee; --link:#2563eb;
+}
+:root[data-theme="night"] {
+  --bg:#121417; --panel:#1c1f24; --text:#e4e6ea; --muted:#9aa0a8;
+  --border:#2e333a; --accent:#7aa2f7; --code-bg:#23272e; --link:#7aa2f7;
+}
+* { box-sizing:border-box; }
+body { margin:0; font-family:-apple-system,'Segoe UI','PingFang SC','Microsoft YaHei',sans-serif;
+  background:var(--bg); color:var(--text); line-height:1.65; }
+header { position:sticky; top:0; z-index:10; background:var(--panel);
+  border-bottom:1px solid var(--border); padding:10px 18px;
+  display:flex; align-items:center; gap:14px; flex-wrap:wrap; }
+header .brand { font-weight:700; letter-spacing:.2px; text-decoration:none; color:var(--text); }
+header nav { display:flex; gap:4px; flex-wrap:wrap; flex:1; }
+header nav a { padding:4px 10px; border-radius:6px; text-decoration:none;
+  color:var(--muted); font-size:14px; }
+header nav a:hover { background:var(--code-bg); color:var(--text); }
+header nav a.active { background:var(--accent); color:#fff; }
+.toggles { display:flex; gap:8px; }
+.toggles button { cursor:pointer; border:1px solid var(--border); background:var(--panel);
+  color:var(--text); border-radius:6px; padding:4px 10px; font-size:13px; }
+.toggles button:hover { background:var(--code-bg); }
+main { max-width:880px; margin:0 auto; padding:28px 18px 80px; }
+article { background:var(--panel); border:1px solid var(--border); border-radius:10px;
+  padding:28px 32px; }
+h1,h2,h3,h4 { line-height:1.3; color:var(--text); }
+a { color:var(--link); }
+code { background:var(--code-bg); padding:2px 5px; border-radius:4px;
+  font-size:.92em; font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace; }
+pre { background:var(--code-bg); padding:14px 16px; border-radius:8px;
+  overflow-x:auto; border:1px solid var(--border); }
+pre code { background:none; padding:0; }
+table { border-collapse:collapse; width:100%; margin:14px 0; font-size:.94em; }
+th,td { border:1px solid var(--border); padding:7px 10px; text-align:left; }
+th { background:var(--code-bg); }
+blockquote { border-left:3px solid var(--accent); margin:14px 0; padding:4px 16px;
+  color:var(--muted); }
+hr { border:none; border-top:1px solid var(--border); margin:26px 0; }
+footer { text-align:center; color:var(--muted); font-size:13px; padding:20px; }
+</style>
+</head>
+<body>
+<header>
+  <a class="brand" href="index.html">outreach-scheduler</a>
+  <nav><a href="readme.html" data-en="Overview" data-zh="概览">Overview</a>
+  <a href="business.html" data-en="Business" data-zh="业务层">Business</a>
+  <a href="client-intake.html" class="active" data-en="Client Intake" data-zh="客户接入">Client Intake</a>
+  <a href="deployment.html" data-en="Deployment" data-zh="部署">Deployment</a>
+  <a href="operations.html" data-en="Operations" data-zh="运维">Operations</a>
+  <a href="design.html" data-en="Design" data-zh="设计">Design</a></nav>
+  <div class="toggles">
+    <button id="lang" type="button">中文</button>
+    <button id="theme" type="button">夜视</button>
+  </div>
+</header>
+<main><article><div data-lang-en="1"><h1 style="display:none">Client intake &amp; operations handbook</h1><h1>Client intake &amp; operations handbook</h1>
+<p>Purpose: define what a client must provide, how the system feeds back
+operating status, and the internal business process from intake to steady
+state. Validated against three simulated client profiles (§3).</p>
+<p>Chinese version: see <code>client-intake.zh.md</code>.</p>
+<hr />
+<h2>1. Client intake checklist</h2>
+<h3>1.1 Required (kickoff blocked without these)</h3>
+<table>
+<thead>
+<tr>
+<th>#</th>
+<th>Item</th>
+<th>Maps to system</th>
+<th>Notes</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>1</td>
+<td><strong>Domain</strong> (promotion target)</td>
+<td><code>project.domain</code></td>
+<td>one project per domain</td>
+</tr>
+<tr>
+<td>2</td>
+<td><strong>Promotion scope</strong>: whole site now, specific pages later</td>
+<td><code>project.tags</code> + level-1/2 URL list (asset <code>page</code>)</td>
+<td>per-page/product promotion = a later phase adding landing URLs; scope changes are just asset updates, no new project</td>
+</tr>
+<tr>
+<td>3</td>
+<td><strong>Client operational mailbox</strong></td>
+<td>wave2 sender identity + directory-site registrations</td>
+<td>email address <strong>plus SMTP/IMAP app-password credentials</strong> (or the client sends manually); credentials go to gitignored env file, never in the repo</td>
+</tr>
+<tr>
+<td>4</td>
+<td><strong>Site TDK</strong> (title / description / keywords)</td>
+<td>asset <code>tdk</code></td>
+<td>if not provided, system probes homepage meta; if probing fails → flagged <code>missing</code> in the daily report for manual fill</td>
+</tr>
+<tr>
+<td>5</td>
+<td><strong>Level-1/2 page URLs</strong> to promote (manual list)</td>
+<td>asset <code>page</code></td>
+<td>manual input only; absent → submissions land on the homepage</td>
+</tr>
+<tr>
+<td>6</td>
+<td><strong>Brand basics</strong>: brand/maker name, one-line intro, logo URL</td>
+<td>form fields, outreach signature</td>
+<td>probed from the site if absent</td>
+</tr>
+</tbody>
+</table>
+<h3>1.2 Optional (defaults exist)</h3>
+<table>
+<thead>
+<tr>
+<th>#</th>
+<th>Item</th>
+<th>Default when absent</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>7</td>
+<td>Blog article list (guest_post bodies)</td>
+<td>sitemap/RSS harvest; still nothing → <strong>site-summary article</strong> generated from the site's own summary</td>
+</tr>
+<tr>
+<td>8</td>
+<td>Outreach email copy preferences (tone, signature)</td>
+<td><strong>generic outreach email template</strong></td>
+</tr>
+<tr>
+<td>9</td>
+<td>Exclusion list (site types / competitors not to touch)</td>
+<td>empty</td>
+</tr>
+<tr>
+<td>10</td>
+<td>Daily quota preference</td>
+<td>system default (per-project 10/day)</td>
+</tr>
+<tr>
+<td>11</td>
+<td>Report recipients (client-facing)</td>
+<td>report only lands in run_log; enable by configuring <code>report.email</code></td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h2>2. Operating status feedback (client-facing loop)</h2>
+<p>Two report layers, both from the same run_log — nothing is reported that is
+not already recorded:</p>
+<table>
+<thead>
+<tr>
+<th>Layer</th>
+<th>Cadence</th>
+<th>Content</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Daily report</strong> (internal, §8 of DESIGN.md)</td>
+<td>daily, auto</td>
+<td>today's plan / yesterday's results / pending-confirmation queue / pool changes / human-action items</td>
+</tr>
+<tr>
+<td><strong>Client report</strong> (filtered daily report)</td>
+<td>configurable (daily or weekly digest)</td>
+<td>submissions made, successes/failures, <strong>live link list</strong>, assets on template fallback (quality signal), decisions needed from client</td>
+</tr>
+</tbody>
+</table>
+<p>Key notifications that always reach the client regardless of cadence:
+- first live backlink for the project
+- weekly digest (volume, success rate, new live links)
+- anomalies: domain blocks, email bounces, path changes on reused submit endpoints</p>
+<p>Recipient empty = no send (run_log only), same fail-open rule as the internal report.</p>
+<hr />
+<h2>3. Simulated client profiles (validation cases)</h2>
+<table>
+<thead>
+<tr>
+<th></th>
+<th>Client A — game portal</th>
+<th>Client B — kids-bike reviews</th>
+<th>Client C — sound-board tools</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Domain</td>
+<td>games-portal.example</td>
+<td>kids-bike-reviews.example</td>
+<td>sound-tools.example</td>
+</tr>
+<tr>
+<td>Goal</td>
+<td>traffic; <strong>phase 1 whole site, phase 2 specific game pages</strong> (e.g. Crossy Road, 2048 Couch Lazy)</td>
+<td>traffic</td>
+<td>traffic</td>
+</tr>
+<tr>
+<td>Category tags</td>
+<td>gaming, browser-games, english</td>
+<td>parenting, balance-bike, english</td>
+<td>tools, sound, english</td>
+</tr>
+<tr>
+<td>Phase 2 mechanics</td>
+<td>add game landing URLs to the <code>page</code> asset list — matching/scoring picks them up as landing-URL candidates; no new project needed</td>
+<td>—</td>
+<td>—</td>
+</tr>
+<tr>
+<td>Likely channels</td>
+<td>wave1 form submits (game/app directories) + wave2 email</td>
+<td>wave1 + wave2 (parenting blogs, guest posts)</td>
+<td>wave1 (tool directories)</td>
+</tr>
+</tbody>
+</table>
+<p>What the simulation validates:
+- one project per domain, scope evolves via assets (A's two phases)
+- category tags drive matching per market (B parenting vs C tools vs A gaming)
+- assets fallback chain works per client: A/B/C each may miss different assets</p>
+<hr />
+<h2>4. Internal business process (intake → steady state)</h2>
+<pre><code>① intake         client provides checklist §1.1 (+ any §1.2)
+                 ↓
+② verification   domain reachable? TDK probe? mailbox SMTP/IMAP login test?
+                 page URLs return 200? → problems reported before kickoff
+                 ↓
+③ project setup  create project + assets (provided / probed / template),
+                 tags, quota, exclusions
+                 ↓
+④ matching       pool × project → score → pending-confirmation queue
+                 ↓  (human gate: select/confirm)
+⑤ scheduling     confirmed items fill future dates by daily_quota
+                 ↓
+⑥ execution      cron: wave1 HTTP form submit; wave2 SMTP send;
+                 captcha tiering; results → run_log
+                 ↓
+⑦ feedback       daily report (internal) + client report (filtered);
+                 anomalies flagged
+                 ↓
+⑧ review loop    live-rate / failure-rate review → adjust quota,
+                 templates, exclusions → back to ④
+</code></pre>
+<p>Step ownership: ①② are human (sales/ops), ③④⑤⑥⑦ are system with the
+single human gate at ④, ⑧ is human strategy on system data.</p>
+<hr />
+<h2>5. Gaps this simulation surfaced → design notes</h2>
+<ol>
+<li><strong>Multi-client sender identity</strong>: wave2 SMTP credentials are currently one
+   global env file. With three clients, per-project sender identity (name +
+   email + credentials path in <code>projects/&lt;domain&gt;.yaml</code>) is needed if each
+   client uses its own mailbox. Default if unspecified: the shared ops mailbox.</li>
+<li><strong>Client report recipient</strong>: <code>report.email</code> in project YAML (per-project),
+   falling back to global config — already fits the config model.</li>
+<li><strong>Client A phase-2</strong> needs no schema change: it is just new entries in the
+   <code>page</code> asset. Matching treats them as higher-priority landing URLs (fresh
+   entries get a recency boost in scoring — to be confirmed in Phase 3).</li>
+<li><strong>Client mailbox roles</strong> (ratified from real usage): a client mailbox
+   carries two distinct business roles —</li>
+<li><strong>registration role</strong>: brand identity for directory/form submissions
+     (lands in the <code>contact-email</code> asset, used by wave1 forms and CUA fills,
+     and as wave2 sender identity);</li>
+<li><strong>summary role</strong>: recipient of periodic data digests (client report /
+     daily report, <code>report.email</code>).
+   One mailbox may serve both roles at once (current azgames practice:
+   one Gmail does registrations <em>and</em> receives the digests). The config
+   model already supports this — the same address can appear in
+   <code>contact-email</code> and <code>report.email</code>; splitting into two mailboxes later
+   is a config-only change, no schema impact. Client mailboxes are user
+   data: credentials live in gitignored env files, addresses never in the
+   repo.</li>
+</ol></div>
+<div data-lang-en="0" style="display:none"><h1 style="display:none">客户接入与运营手册</h1><h1>客户接入与运营手册</h1>
+<p>目的：定义客户需要提供哪些资料、系统如何反馈运营状态、从接入到稳态的内部业务流程。已用三个模拟客户档案（§3）做校验。</p>
+<p>英文版见 <code>client-intake.md</code>。</p>
+<hr />
+<h2>1. 客户资料清单</h2>
+<h3>1.1 必需（缺一不开工）</h3>
+<table>
+<thead>
+<tr>
+<th>#</th>
+<th>资料项</th>
+<th>对应系统</th>
+<th>说明</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>1</td>
+<td><strong>域名</strong>（推广对象）</td>
+<td><code>project.domain</code></td>
+<td>一域名一项目</td>
+</tr>
+<tr>
+<td>2</td>
+<td><strong>推广范围</strong>：先推整站、后推具体页面</td>
+<td><code>project.tags</code> + 一级/二级地址清单（资产 <code>page</code>）</td>
+<td>后期按页面/产品推广 = 在地址清单里加落地页，属资产更新，不用新建项目</td>
+</tr>
+<tr>
+<td>3</td>
+<td><strong>客户运营邮箱</strong></td>
+<td>wave2 发件身份 + 目录站注册邮箱</td>
+<td>邮箱地址 <strong>+ SMTP/IMAP 应用专用密码凭据</strong>（或客户自发送）；凭据进 gitignored env 文件，永不入库</td>
+</tr>
+<tr>
+<td>4</td>
+<td><strong>站点 TDK</strong>（title/description/keywords）</td>
+<td>资产 <code>tdk</code></td>
+<td>不提供则系统探测首页 meta；探测失败 → 日报标 <code>missing</code> 提醒人工补</td>
+</tr>
+<tr>
+<td>5</td>
+<td><strong>要推的一级/二级地址</strong>（人工清单）</td>
+<td>资产 <code>page</code></td>
+<td>仅人工输入；缺失则提交一律落首页</td>
+</tr>
+<tr>
+<td>6</td>
+<td><strong>品牌基础</strong>：品牌名/maker 名、一句话介绍、logo 地址</td>
+<td>表单字段、外联署名</td>
+<td>缺失则从站点探测</td>
+</tr>
+</tbody>
+</table>
+<h3>1.2 可选（有默认兜底）</h3>
+<table>
+<thead>
+<tr>
+<th>#</th>
+<th>资料项</th>
+<th>缺省兜底</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>7</td>
+<td>博文文章清单（guest_post 正文）</td>
+<td>sitemap/RSS 收割；仍无 → <strong>站点摘要文章</strong>（由站点自身摘要生成）</td>
+</tr>
+<tr>
+<td>8</td>
+<td>外联邮件文案偏好（语气、署名）</td>
+<td><strong>通用外联邮件模板</strong></td>
+</tr>
+<tr>
+<td>9</td>
+<td>排除清单（不投的站点类型/竞品）</td>
+<td>空</td>
+</tr>
+<tr>
+<td>10</td>
+<td>每日配额偏好</td>
+<td>系统默认（每项目 10 条/天）</td>
+</tr>
+<tr>
+<td>11</td>
+<td>报告收件人（对客户）</td>
+<td>只落 run_log 不发送；配置 <code>report.email</code> 后启用</td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h2>2. 运营状态反馈（面向客户的闭环）</h2>
+<p>两层报告，同源于 run_log——<strong>没记录的不汇报</strong>：</p>
+<table>
+<thead>
+<tr>
+<th>层</th>
+<th>频率</th>
+<th>内容</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>日报</strong>（内部，DESIGN.md §8）</td>
+<td>每天自动</td>
+<td>今日计划 / 昨日结果 / 待确认队列 / 池变化 / 待人工事项</td>
+</tr>
+<tr>
+<td><strong>客户报告</strong>（日报过滤版）</td>
+<td>可配置（每日或每周摘要）</td>
+<td>提交量、成功/失败、<strong>已上线链接清单</strong>、靠模板兜底的资产数（质量信号）、需客户拍板事项</td>
+</tr>
+</tbody>
+</table>
+<p>无论频率如何、必达客户的节点通知：
+- 项目首个外链上线
+- 每周摘要（量、成功率、新增上线链接）
+- 异常：域名被封、邮件退信、复用提交路径变更</p>
+<p>收件人空 = 不发送（仅落 run_log），与内部报告同一 fail-open 规则。</p>
+<hr />
+<h2>3. 模拟客户档案（校验用例）</h2>
+<table>
+<thead>
+<tr>
+<th></th>
+<th>客户 A — 游戏门户</th>
+<th>客户 B — 童车评测</th>
+<th>客户 C — 音效工具</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>域名</td>
+<td>games-portal.example</td>
+<td>kids-bike-reviews.example</td>
+<td>sound-tools.example</td>
+</tr>
+<tr>
+<td>目标</td>
+<td>获取流量；<strong>一期整站，二期具体游戏页</strong>（如 Crossy Road、2048 Couch Lazy）</td>
+<td>获取流量</td>
+<td>获取流量</td>
+</tr>
+<tr>
+<td>分类标签</td>
+<td>gaming, browser-games, english</td>
+<td>parenting, balance-bike, english</td>
+<td>tools, sound, english</td>
+</tr>
+<tr>
+<td>二期机制</td>
+<td>把游戏落地页加进 <code>page</code> 资产清单——匹配打分自动把它们当作落地 URL 候选；<strong>无需新建项目</strong></td>
+<td>—</td>
+<td>—</td>
+</tr>
+<tr>
+<td>预计通道</td>
+<td>wave1 表单直投（游戏/应用目录）+ wave2 邮件</td>
+<td>wave1 + wave2（亲子博客、客座文章）</td>
+<td>wave1（工具目录）</td>
+</tr>
+</tbody>
+</table>
+<p>模拟校验了什么：
+- 一域名一项目，推广范围靠资产演进（A 的两期）
+- 分类标签按市场驱动匹配（B 亲子 vs C 工具 vs A 游戏）
+- 资产兜底链按客户生效：A/B/C 各自缺的资产不同，各走各的兜底</p>
+<hr />
+<h2>4. 内部业务流程（接入 → 稳态）</h2>
+<pre><code>① 接入           客户提供 §1.1 清单（+ 任意 §1.2 可选项）
+                 ↓
+② 核验           域名可达？TDK 探测？邮箱 SMTP/IMAP 登录测试？
+                 页面地址返回 200？→ 问题在开工前报出
+                 ↓
+③ 建档           建项目 + 资产（provided / probed / template）、
+                 标签、配额、排除清单
+                 ↓
+④ 匹配           池 × 项目 → 打分 → 待确认队列
+                 ↓  （人工闸：勾选确认）
+⑤ 排期           确认项按 daily_quota 填充未来日期
+                 ↓
+⑥ 执行           cron：wave1 HTTP 表单直投；wave2 SMTP 发送；
+                 验证码分级处理；结果 → run_log
+                 ↓
+⑦ 反馈           日报（内部）+ 客户报告（过滤版）；异常标记
+                 ↓
+⑧ 复盘           上线率/失败率复盘 → 调整配额、模板、排除清单 → 回到 ④
+</code></pre>
+<p>步骤归属：①② 人工（销售/运营），③④⑤⑥⑦ 系统执行（仅 ④ 一道人工闸），⑧ 人工基于系统数据做策略。</p>
+<hr />
+<h2>5. 模拟暴露的设计缺口 → 设计备注</h2>
+<ol>
+<li><strong>多客户发件身份</strong>：wave2 SMTP 凭据目前是单一全局 env 文件。三个客户各自用自己邮箱时，需要按项目的发件身份（姓名 + 邮箱 + 凭据路径写进 <code>projects/&lt;domain&gt;.yaml</code>）。未指定时默认用共享运营邮箱。</li>
+<li><strong>客户报告收件人</strong>：项目 YAML 里的 <code>report.email</code>（按项目），回落到全局配置——现有配置模型已兼容。</li>
+<li><strong>客户 A 二期</strong>不需要改 schema：只是 <code>page</code> 资产里加新条目；匹配把新条目当高优落地 URL（Phase 3 打分时给新条目加新鲜度加权——待确认）。</li>
+<li><strong>客户邮箱角色模型</strong>（真实用法确认）：客户邮箱承担两种业务角色——</li>
+<li><strong>注册角色</strong>：目录/表单提交的品牌身份（落到 <code>contact-email</code> 资产，供 wave1 表单、CUA 填充和 wave2 发件身份使用）；</li>
+<li><strong>汇总角色</strong>：阶段性数据摘要的收件方（客户报告 / 日报，<code>report.email</code>）。
+   一个邮箱可以同时承担两种角色（当前 azgames 实践：一个 Gmail 既做注册又收日报）。配置模型天然支持——同一地址可同时出现在 <code>contact-email</code> 和 <code>report.email</code>；将来拆成两个邮箱只是改配置，不动 schema。客户邮箱属用户数据：凭据只放 gitignored env 文件，地址不入仓库。</li>
+</ol></div></article></main>
+<footer>bilingual docs · built from .md sources</footer>
+<script>
+(function(){
+  var root=document.documentElement;
+  var langBtn=document.getElementById('lang'), themeBtn=document.getElementById('theme');
+  function setLang(l){
+    root.setAttribute('data-lang',l);
+    document.querySelectorAll('[data-lang-en]').forEach(function(el){
+      el.style.display = (el.getAttribute('data-lang-en')==='1') === (l==='en') ? '' : 'none';
+    });
+    localStorage.setItem('docs-lang',l);
+    langBtn.textContent = l==='en' ? '中文' : 'English';
+    document.title = document.querySelector(l==='en'?'[data-lang-en="1"] h1':'[data-lang-en="0"] h1')
+      ? (document.querySelector(l==='en'?'[data-lang-en="1"] h1':'[data-lang-en="0"] h1').textContent + ' — outreach-scheduler docs')
+      : document.title;
+    if(window.location.pathname.endsWith('index.html')){
+      document.querySelectorAll('nav a').forEach(function(a){
+        a.textContent = l==='en' ? a.getAttribute('data-en') : a.getAttribute('data-zh');
+      });
+    }
+  }
+  function setTheme(t){
+    root.setAttribute('data-theme',t);
+    localStorage.setItem('docs-theme',t);
+    themeBtn.textContent = t==='day' ? '夜视' : '白天';
+  }
+  langBtn.addEventListener('click',function(){
+    setLang(root.getAttribute('data-lang')==='en'?'zh':'en');
+  });
+  themeBtn.addEventListener('click',function(){
+    setTheme(root.getAttribute('data-theme')==='day'?'night':'day');
+  });
+  setTheme(localStorage.getItem('docs-theme')||'day');
+  setLang(localStorage.getItem('docs-lang')||'en');
+})();
+</script>
+</body>
+</html>
