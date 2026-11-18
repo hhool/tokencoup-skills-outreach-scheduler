@@ -109,7 +109,7 @@ def _download(url, cache_dir):
         return dest
     tmp = dest + ".part"
     log("  downloading %s -> %s" % (url, dest))
-    req = urllib.request.Request(url, headers={"User-Agent": "backlink-prospector/1.0"})
+    req = urllib.request.Request(url, headers={"User-Agent": "outreach-scheduler/1.0"})
     with urllib.request.urlopen(req, timeout=120) as resp, open(tmp, "wb") as out:
         total = resp.headers.get("Content-Length")
         total = int(total) if total and total.isdigit() else 0

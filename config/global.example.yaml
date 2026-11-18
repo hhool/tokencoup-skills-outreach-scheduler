@@ -4,7 +4,7 @@
 # User data NEVER lives in this repo: data_root points outside, or the
 # repo-local data/ directory which is fully gitignored.
 
-data_root: data                    # repo-local (gitignored) or e.g. ~/outreach-data
+data_root: data                    # repo-local (gitignored) or e.g. ~/outreach-scheduler-data
 
 sources:
   # Import sources. WDC-style harvested data + similar datasets.
@@ -24,7 +24,7 @@ scheduler:
 
 report:
   email: ""                        # empty = no daily report email; set to enable
-  smtp_env_file: ~/.sextant/outreach-smtp.env
+  smtp_env_file: config/secrets/smtp.env   # project-local, gitignored
 
 dr:
   provider: openpagerank           # free 0-10 domain rank, 30k domains/month

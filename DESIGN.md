@@ -1,219 +1,225 @@
-# outreach-scheduler 设计讨论稿
+# outreach-scheduler — Design Document
 
-日期：2026-11-18 · 状态：讨论稿（no coding，待确认后进入架构决策）
-本稿落盘于 skill-seo-geo/outreach-scheduler/，后期独立于 workbuddy 环境运行。
+Date: 2026-11-18 · Status: design draft, ratified by user across four decision rounds
+This document lives in the `outreach-scheduler/` project folder; the system will later run independently of any external toolchain.
 
----
-
-## 0. 定位结论
-
-4 条需求 = 一个「外联计划调度中心」。建议独立仓库 `outreach-scheduler`，职责四层：
-
-1. **导入层**：外链库 → 外链池（单向导入，只进不出，不写回源）
-2. **池**：SQLite 单文件，自动分类 + DR 权重
-3. **计划层**：项目（域名）→ 自动匹配 → **人工确认一道闸** → 可配置发送计划
-4. **执行层**：周期自动执行（wave1 表单直投 + wave2 邮件自动发）+ 每日邮件汇报
-
-与现有系统的关系：
-- **导入源 = WDC 收割数据及其他同类外链数据**（本系统不写回源）
-- workbench targets.jsonl / prospector **不作为导入源**，也不再是本系统的上游；workbench 保留其自身评审/台账角色不变
-- SEXTANT 的 R-520（人工发送）适用于 SEXTANT 本身；本系统独立实施自动发送，但保留「失败/可疑转人工队列」逃生门
-
-关键设计影响：WDC/同类数据是**原始竞品反链**（指向竞品的外部链接），不是现成的「可投递平台清单」。因此导入层必须包含**探测阶段**（probe）：对每条 URL 做 HTTP 探测，识别「是否可投递」——有提交表单/注册入口/联系邮箱的才升级为机会条目，其余沉淀为普通池条目。
+Chinese version: see `DESIGN.zh.md`.
 
 ---
 
-## 1. 需求拍板结果（2026-11-18 用户确认，两轮）
+## 0. Positioning
 
-| # | 问题 | 结论 |
-|---|------|------|
-| 1 | 外链库来源 | **WDC 数据 + 其他类似外链收割数据**。不使用 workbench targets.jsonl + prospector 导出 |
-| 1a | 导入源设计 | **先定义抽象接口 + 统一输出数据模型**（§4b SourceAdapter/SourceRecord），新源以适配器接入，下游零改动 |
-| 1b | WDC 代码复制 | backlink-prospector 的 WDC 处理逻辑 4 文件已原样 cp 到 `import/`（harvest_competitor_links.py、competitor_backlinks.py、export_wdc_fast.py、dl.sh + README） |
-| 1b | 验证码识别 | **追加**。执行层需具备验证码识别能力（分级策略，见 §7），过不了的转人工队列 |
-| 2 | DR 权重 | **加**。免费源可用即启用：Keywords Everywhere Open PageRank（免费 30k 域名/月，0-10 分）；Moz 免费层 50 rows/月需信用卡，仅作补充不依赖 |
-| 3 | 执行边界 | **全部自动**（wave1 表单直投自动、wave2 邮件自动发），不保留「只出清单」模式 |
-| 4 | 邮件汇报 | 自动发；**收件人默认空 = 不发送**，配置后启用 |
-| 5 | 匹配后人工确认 | **需要**。自动匹配 → 待确认队列 → 人工勾选 → 进入已排计划 → 执行器只跑已确认项 |
+The four original requirements describe one thing: an **outreach planning & scheduling center**. Recommended as a standalone repo `outreach-scheduler` with four layers:
+
+1. **Import layer**: link library → link pool (one-way import; nothing is written back to sources)
+2. **Pool**: single-file SQLite, auto-classified + DR weighting
+3. **Planning layer**: project (domain) → auto-match → **one mandatory human-confirmation gate** → configurable send plan
+4. **Execution layer**: periodic auto-execution (wave1 form submit + wave2 email send) + daily email report
+
+Relation to existing systems:
+- **Import sources = WDC harvested data + other similar backlink datasets** (never written back)
+- workbench `targets.jsonl` / prospector exports are **NOT import sources** and are no longer upstream; workbench keeps its own review/ledger role untouched
+- The legacy mail system's R-520 convention (human sending) applies to that system only; this system implements automated sending independently, but keeps an escape hatch: failures/suspicious results go to a human queue
+
+Key design consequence: WDC/similar data are **raw competitor backlinks** (external links pointing to competitors), not a ready-made "submittable platform list". The import layer therefore includes a **probe stage**: HTTP-probe each URL to determine "is it submittable" — entries with submit forms / register endpoints / contact emails are upgraded to opportunity entries; the rest stay as ordinary pool entries.
 
 ---
 
-## 2. 架构与数据流
+## 1. Ratified decisions (2026-11-18, four rounds)
+
+| # | Question | Decision |
+|---|----------|----------|
+| 1 | Link-library source | **WDC data + other similar harvested backlink datasets**. workbench targets.jsonl + prospector exports are not used |
+| 1a | Import-source design | **Abstract interface first + unified output model** (§4b SourceAdapter/SourceRecord); new sources plug in via adapters, zero downstream changes |
+| 1b | WDC code reuse | The 4 WDC processing files from the internal harvest repository were copied as-is into `import/` (harvest_competitor_links.py, competitor_backlinks.py, export_wdc_fast.py, dl.sh + README) |
+| 1b | Captcha recognition | **Added requirement.** Execution layer must recognize captchas (tiered strategy, §7); unsolvable ones go to the human queue |
+| 2 | DR weighting | **Yes.** Enabled via free sources: Keywords Everywhere Open PageRank (free 30k domains/month, 0-10 score); Moz free tier (50 rows/month, needs credit card) is supplementary only, not a dependency |
+| 3 | Execution boundary | **Fully automated** (wave1 form submit auto, wave2 email auto-send); no "list-only" mode |
+| 4 | Email report | Sent automatically; **recipient defaults to empty = not sent**; enabling happens via config |
+| 5 | Human confirmation after matching | **Required.** Auto-match → pending queue → human selection → scheduled plan → executor only runs confirmed items |
+| 6 | Doc language | **English-primary `.md` / Chinese `.zh.md`** |
+
+---
+
+## 2. Architecture & data flow
 
 ```
-导入源                          本仓库（独立运行）
+Import sources                     This repo (standalone)
 ┌──────────────────┐   ┌──────────────────────────────────────────────┐
-│ WDC 收割数据      │──►│ ①导入+探测层 ──► ②外链池(SQLite)              │
-│ 其他同类外链数据  │   │  去重→HTTP探测(入口/表单/验证码类型/邮箱)      │
-│ (原始竞品反链)    │   │  →分类+DR                                    │
+│ WDC harvest data │──►│ ① import+probe ──► ② pool (SQLite)           │
+│ similar datasets │   │  dedupe → HTTP probe (entry/form/captcha/    │
+│ (raw backlinks)  │   │  contact) → classify + DR                    │
 └──────────────────┘   └──────────────────────┬───────────────────────┘
                                     ┌─────────▼──────────┐
-                                    │ ③计划层             │
-   人工确认闸 ────────────────────►  │ 项目(域名)→自动匹配  │
-   （待确认队列勾选）                │ →评分→待确认队列     │
+                                    │ ③ planning          │
+   human-confirmation gate ───────► │ project (domain) →  │
+   (select from pending queue)      │ auto-match → score  │
+                                    │ → pending queue     │
                                     └─────────┬──────────┘
                                     ┌─────────▼──────────┐
-                                    │ ④执行层             │
-                                    │ cron 拉起 CLI：      │
-                                    │ 取当日计划→自动执行   │
-                                    │ (含验证码分级识别)    │
-                                    │ →结果回写→SMTP 汇报  │
+                                    │ ④ execution         │
+                                    │ cron-launched CLI:  │
+                                    │ take today's plan → │
+                                    │ auto-execute        │
+                                    │ (captcha tiers) →   │
+                                    │ write back → SMTP   │
+                                    │ report              │
                                     └─────────────────────┘
 ```
 
-要点：
-- 池是本系统的唯一真相源；导入按「域名+页面 URL」去重，source 字段保留出处
-- WDC/同类数据是原始竞品反链，**探测阶段决定「是否可投递」**：有提交入口/联系方式的升级为机会条目，其余沉淀为普通池条目
-- 匹配与执行之间强制一道人工确认闸（拍板 #5）
-- 执行器只消费「已确认且已排期」的计划项，绝不碰 pending 状态
+Key points:
+- The pool is the single source of truth; imports dedupe by (domain + page URL), with provenance kept in `source`
+- WDC/similar data are raw competitor backlinks — **the probe stage decides "submittable or not"**: entries with a submit endpoint/contact are upgraded to opportunities, others stay as ordinary pool entries
+- A mandatory human-confirmation gate sits between matching and execution (decision #5)
+- The executor only consumes items that are confirmed *and* scheduled; it never touches `pending` state
 
 ---
 
-## 3. 数据模型（SQLite 表草案）
+## 3. Data model (SQLite tables, draft)
 
 ```
-pool        池条目
+pool        pool entry
   id, source(wdc|similar:<name>), source_id, url, domain,
-  anchor_text, target_domain(反链指向的竞品域),
-  entry_url(探测出的提交/注册入口),
+  anchor_text, target_domain(competitor domain the backlink points to),
+  entry_url(discovered submit/register endpoint),
   has_submit_form, form_fields(JSON), captcha_type(none|recaptcha_v2|
     recaptcha_v3|turnstile|hcaptcha|image|email_code|unknown),
   contact_email, probe_state(unprobed|probed|unreachable),
-  site_type(目录站|书签站|SaaS目录|启动平台|博客|论坛|…),
+  site_type(directory|bookmark|saas-directory|launchpad|blog|forum|…),
   submit_type(auto|register|free|listing|posting|guest_post|pitch|…),
   wave(1|2|3), category(gaming|parenting|tools|general|…),
   dr(0-10 Open PageRank), language, geo,
   status(active|dead|bot-blocked|rejected),
-  first_seen, last_seen, raw(JSON 原始字段)
+  first_seen, last_seen, raw(JSON passthrough)
 
-project     投放项目
+project     outreach project
   id, domain, tags(JSON), status, created_at
 
-match       匹配结果
+match       match result
   id, project_id, pool_id, score, score_detail(JSON),
   state(pending|confirmed|rejected), confirmed_at
 
-plan        排期与执行记录
+plan        schedule & execution record
   id, project_id, match_id, scheduled_date, channel(form|email),
   template_id, state(queued|sent|failed|blocked|skipped),
   captcha_solved(0|1), captcha_cost, executed_at, result_note
 
-run_log     执行日志
+run_log     execution log
   id, ts, action, target, result, note
 ```
 
-配置不走数据库，全部 YAML 文件（见 §6），改配置即改行为。
+Configuration never lives in the database — all YAML (§6); changing config changes behavior.
 
 ---
 
-## 4. 自动分类流水线（导入时执行）
+## 4. Auto-classification pipeline (runs at import)
 
-**第一步：HTTP 探测（probe）**——WDC/同类数据是原始反链，必须先探测才能投递：
-- 抓取页面，识别提交/注册入口（submit.php/add-link/register 等模式 + 表单 DOM 特征）
-- 提取表单字段、**验证码类型**（recaptcha_v2/v3、turnstile、hcaptcha、图形码、邮箱验证码、无）、联系邮箱
-- 无入口的条目标 unprobed→沉淀，不进投递匹配；探测结果缓存，避免重复抓
+**Step 1: HTTP probe** — WDC/similar data are raw backlinks and must be probed before submission:
+- Fetch the page, identify submit/register endpoints (patterns like submit.php / add-link / register + form DOM signatures)
+- Extract form fields, **captcha type** (recaptcha_v2/v3, turnstile, hcaptcha, image, email code, none), contact email
+- Entries with no endpoint are marked unprobed and settle in the pool; they do not enter submit matching. Probe results are cached to avoid refetching
 
-**第二步：三层分类**，全部自动：
+**Step 2: three-layer classification**, all automatic:
 
-1. **site_type**：按 submit_type + DOM/URL 特征归目录站/书签站/SaaS 目录/启动平台/博客/论坛
-2. **wave 派生**：按主 submit_type 判定；wave 字段显式指定优先于派生
-3. **category**：关键词规则表（gaming/parenting/tools/…），先规则后人工修正，规则表放配置文件可扩充
+1. **site_type**: classified by submit_type + DOM/URL signatures into directory / bookmark / SaaS directory / launchpad / blog / forum
+2. **wave derivation**: decided by the primary submit_type; an explicit `wave` value always wins over the derived one
+3. **category**: keyword rule table (gaming/parenting/tools/…); rules first, manual correction later; rule table lives in config and is extensible
 
-DR 补齐：
-- Open PageRank 批量查询（按域名去重、本地缓存、永不重复查）
-- **已知坑**：免费钥绑定单一出口 IP，换网络会 403 address_error（claude-seo 已处理过该错误识别），需在账户页绑定本机出口 IP，每周可改一次
-- DR 进匹配打分权重（§5），也用于池内分层统计
+DR enrichment:
+- Open PageRank batch queries (deduped by domain, local cache, never queried twice)
+- **Known pitfall**: free API keys are bound to a single egress IP; switching networks yields 403 address_error (already handled in claude-seo). Bind the machine's egress IP on the account page; changeable once per week
+- DR feeds matching weights (§5) and pool layer statistics
 
-存活判定沿用现有口径：403/412/429 = Cloudflare 反爬，不是死链，保留并标 bot-blocked，不误杀。
-
----
-
-## 4b. 导入源抽象接口与统一数据模型（拍板：先定接口，后接源）
-
-导入层采用**适配器模式**：每个数据源实现一个 SourceAdapter，全部输出统一 SourceRecord；探测/分类/DR 只面向统一模型，与具体源解耦。
-
-### 统一输出模型：SourceRecord
-
-| 字段 | 类型 | 说明 |
-|------|------|------|
-| `url` | str，必填 | 收割到的页面/站点 URL |
-| `domain` | str | 派生（url → pay-level-domain），适配器不填由管线归一 |
-| `source` | 溯源对象 | `{kind, file, row_no}`——可追溯到源文件与行 |
-| `evidence` | 证据对象 | `{via_competitors: [域名…], inbound: n, corpus: "wdc-2012-08"}`——WDC 图的证据先验；其他源有对应证据就填，没有为空 |
-| `hints` | 提示对象 | `{category, language}` 可空——源自带的分类/语言提示，仅作管线输入不作结论 |
-| `raw` | JSON | 原始行透传，永不丢失 |
-
-### 抽象接口：SourceAdapter
-
-```
-kind: str                                 源类型标识（"wdc" / "similar:<name>"）
-discover() -> [SourceFile]                枚举该源当前可用的数据文件（含 mtime/大小，支持增量）
-parse(file) -> Iterator[SourceRecord]     逐条解析为统一模型（惰性，大文件不整载）
-validate(rec) -> [Issue]                  记录级校验：URL 合法、必填字段、明显脏数据
-```
-
-不变式（适配器纪律）：
-1. **只读、无副作用**：不探测、不写库、不改任何文件
-2. 探测/分类/DR 全部在管线下游统一执行——**新增导入源 = 写一个适配器 + 一段 YAML，下游零改动**
-3. 适配器不 import 下游模块（单向依赖：adapter → 统一模型）
-4. 大文件惰性逐条产出（WDC 产物单文件可数万行）
-
-### 内置适配器
-
-| kind | 输入 | 状态 |
-|------|------|------|
-| `wdc_competitor_links` | `competitor-links-<center>.json`（import/harvest_competitor_links.py 产物）；evidence 映射 via_competitors→evidence.via_competitors、inbound→evidence.inbound | 已定义，随基线代码就绪 |
-| `similar_csv` / `similar_json` | 其他同类收割数据的通用映射适配器（列名/字段映射进 YAML） | 预留，待样例后定义映射 |
-
-数据流：`SourceAdapter → SourceRecord → probe(探测) → classify(分类) → DR 补齐 → PoolEntry(SQLite 池)`
+Liveness rule (existing convention): 403/412/429 = Cloudflare anti-bot, **not** a dead link — keep and mark `bot-blocked`, do not prune.
 
 ---
 
-## 5. 匹配与打分
+## 4b. Import-source abstraction & unified data model (decision: interface first)
+
+The import layer uses the **adapter pattern**: every data source implements one SourceAdapter, all producing the unified SourceRecord; probe/classify/DR only face the unified model and stay decoupled from specific sources.
+
+### Unified output model: SourceRecord
+
+| Field | Type | Meaning |
+|-------|------|---------|
+| `url` | str, required | harvested page/site URL |
+| `domain` | str | derived (url → pay-level domain); if the adapter omits it, the pipeline normalizes |
+| `source` | provenance object | `{kind, file, row_no}` — traceable to source file and row |
+| `evidence` | evidence object | `{via_competitors: [domains…], inbound: n, corpus: "wdc-2012-08"}` — WDC-graph evidence priors; other sources fill what they have, empty otherwise |
+| `hints` | hints object | `{category, language}` nullable — source-provided hints, pipeline inputs only, never conclusions |
+| `raw` | JSON | original row passed through, never lost |
+
+### Abstract interface: SourceAdapter
 
 ```
-score = w1×类别匹配(0/1)
-      + w2×语言/地区匹配
-      + w3×wave 优先(wave1=1, wave2=0.6, wave3=0)
-      + w4×DR 归一化(dr/10)
-      + w5×fit_score 先验(导入自带)
-      - 排除项（已投递/已拒绝/排除域名列表 → 直接不入队）
+kind: str                                 source type id ("wdc" / "similar:<name>")
+discover() -> [SourceFile]                enumerate available data files (mtime/size, incremental-friendly)
+parse(file) -> Iterator[SourceRecord]     lazy per-record parsing (large files never fully loaded)
+validate(rec) -> [Issue]                  record-level validation: URL sane, required fields, obvious junk
 ```
 
-- 权重和阈值进 YAML，可按项目覆盖
-- 产出按 score 降序进入该项目「待确认队列」，人工勾选确认后才生成排期
-- 排期生成规则：按 daily_quota 从确认池依次填充未来日期
+Invariants (adapter discipline):
+1. **Read-only, side-effect-free**: no probing, no DB writes, no file changes
+2. Probe/classify/DR all run downstream in the pipeline — **adding a source = one adapter + one YAML block, zero downstream changes**
+3. Adapters never import downstream modules (one-way dependency: adapter → unified model)
+4. Large files are produced lazily record-by-record (a single WDC product file can be tens of thousands of rows)
+
+### Built-in adapters
+
+| kind | input | status |
+|------|-------|--------|
+| `wdc_competitor_links` | `competitor-links-<center>.json` (product of import/harvest_competitor_links.py); evidence maps via_competitors→evidence.via_competitors, inbound→evidence.inbound | defined, shipped with baseline code |
+| `similar_csv` / `similar_json` | generic mapping adapters for other similar harvested data (column/field mapping lives in YAML) | reserved, mapping pending samples |
+
+Data flow: `SourceAdapter → SourceRecord → probe → classify → DR enrichment → PoolEntry (SQLite pool)`
 
 ---
 
-## 6. 配置文件样例（YAML，非代码）
+## 5. Matching & scoring
+
+```
+score = w1×category match (0/1)
+      + w2×language/geo match
+      + w3×wave priority (wave1=1, wave2=0.6, wave3=0)
+      + w4×DR normalized (dr/10)
+      + w5×competitor-evidence prior (via_competitors/inbound from import)
+      - exclusions (already submitted / rejected / excluded-domain list → never enqueued)
+```
+
+- Weights and threshold live in YAML, overridable per project
+- Output enters the project's pending-confirmation queue sorted by score descending; scheduling is generated only after human selection
+- Schedule generation: fill future dates from the confirmed pool respecting daily_quota
+
+---
+
+## 6. Config samples (YAML, not code)
 
 ```yaml
-# global.yaml —— 全局
-data_root: ~/outreach-data        # 用户数据根目录（仓库外，彻底隔离；默认仓库内 data/ 且 gitignore）
+# global.yaml —— global
+data_root: ~/outreach-scheduler-data   # user-data root: a folder named after THIS project only (never other private folders)
 sources:
-  competitor_links_glob: "~/Desktop/skill-seo-geo/backlink-prospector/data/competitor-links-*.json"
-  similar: []          # 其他同类数据源，逐个列出（格式/字段待样例确认）
-  exclude: [workbench_jsonl, prospector_store]   # 明确不用
+  competitor_links_glob: "data/sources/competitor-links-*.json"
+  similar: []          # other similar sources, listed one by one (format/fields pending samples)
+  exclude: [workbench_jsonl, prospector_store]   # explicitly not used
 scheduler:
   run_at: "09:30"
   timezone: Asia/Shanghai
 report:
-  email: ""            # 默认空=不发；配置后启用
-  smtp_env_file: ~/.sextant/outreach-smtp.env
+  email: ""            # empty = not sent; enable by configuring
+  smtp_env_file: config/secrets/smtp.env   # project-local, gitignored
 dr:
   provider: openpagerank
   cache_days: 30
 captcha:
-  channel: cua         # 默认 CUA 免费通道（本机 Chrome）
-  solver_api: ""       # 可选兜底，默认空=纯免费模式
+  channel: cua         # default free CUA channel (local Chrome)
+  solver_api: ""       # optional fallback; default empty = free-only mode
   api_key_env: SOLVER_API_KEY
-  monthly_budget_usd: 0    # 默认 0 = 不启用付费
-quotas:                  # 护栏，沿用 R-522/R-530 口径
+  monthly_budget_usd: 0    # default 0 = paid solving off
+quotas:                  # guardrails (R-522/R-530 conventions)
   per_domain_per_day: 100
   per_project_per_day: 10
 
-# projects/<project-domain>.yaml —— 每项目一份
+# projects/<project-domain>.yaml —— one per project
 domain: <project-domain>
 tags: [gaming, browser-games, english]
 daily_quota: 10
@@ -230,89 +236,95 @@ start_date: 2026-11-20
 
 ---
 
-## 7. 执行层
+## 7. Execution layer
 
-- **调度方式**：系统 cron 拉起 CLI（`scheduler run --date today`），无常驻进程、无 workbuddy 依赖——这是「独立于 workbuddy」的关键选择
-- **wave1 表单直投**：HTTP 表单通道优先（requests + 表单规则）；需要真实浏览器的站点属 CUA 类，依赖本机 Chrome，**第一阶段不自动**，进人工队列（独立性 vs 自动化的取舍：HTTP 优先）
-- **wave2 邮件自动发**：SMTP 发送，复用 Gmail 应用密码（identity.py 的 env 模式），配额键=域名（R-530 口径）
-- **失败处理**：失败重试 ≤3 次（仅 5xx/网络类，4xx 不重试），重试耗尽转人工队列并在日报列出
+- **Scheduling**: system cron launches the CLI (`scheduler run --date today`); no resident process, no external-toolchain dependency — this is the key choice for "independent of the host environment"
+- **wave1 form submit**: HTTP form channel first (requests + form rules); sites requiring a real browser are CUA-class — dependent on local Chrome — and are **not automated in phase 1**; they go to the human queue (trade-off: HTTP first, independence over automation)
+- **wave2 email auto-send**: SMTP, reusing Gmail app passwords (identity.py env pattern); quota key = domain (R-530 convention)
+- **Failure handling**: retries ≤3 (5xx/network only; 4xx never retried); exhausted retries go to the human queue and appear in the daily report
 
-### 7.1 验证码识别（追加需求，通道确认：CUA 免费优先）
+### 7.1 Captcha recognition (added requirement; channel ratified: CUA free first)
 
-探测阶段已标注每个入口的 captcha_type，执行时按类型分级处理。**免费通道优先，付费打码 API 仅为可选兜底**：
+Probe already tags every endpoint's captcha_type; execution handles by tier. **Free channels first; paid solver APIs are optional fallback only**:
 
-| 类型 | 策略 | 成本 |
-|------|------|------|
-| none | 直接提交 | 0 |
-| recaptcha_v3 / turnstile / hcaptcha 隐形 | CUA（本机真实 Chrome）加载页面，真实指纹自然通过 | 0 |
-| recaptcha_v2 / hcaptcha 图像挑战 | **CUA 通道**：真实浏览器内完成挑战识别与点击 | 0 |
-| 图形验证码（自绘字符） | 先本地 OCR（免费）；失败走 CUA 通道 | 0 |
-| email_code（邮箱验证码） | IMAP 自动取码回填（mail_verify.py 模式） | 0 |
-| unknown / CUA 失败 | 转人工队列 | 0 |
-| （可选兜底）第三方打码 API | 仅当 CUA 通道吞吐不足时启用，默认不配 | ~$1-3/千次 |
+| Type | Strategy | Cost |
+|------|----------|------|
+| none | submit directly | 0 |
+| recaptcha_v3 / turnstile / invisible hcaptcha | CUA (local real Chrome) loads the page; real fingerprint passes naturally | 0 |
+| recaptcha_v2 / hcaptcha image challenge | **CUA channel**: challenge recognized and clicked inside the real browser | 0 |
+| image captcha (self-drawn glyphs) | local OCR first (free); on failure fall through to CUA | 0 |
+| email_code | IMAP auto-fetch code and backfill (mail_verify.py pattern) | 0 |
+| unknown / CUA failure | human queue | 0 |
+| (optional fallback) paid solver API | enabled only if CUA throughput proves insufficient; unconfigured by default | ~$1-3/1k |
 
-CUA 通道说明：
-- 依赖本机 Chrome + 浏览器自动化，是全系统**唯一的本机环境依赖**（用户已确认接受）
-- 验证码成功的浏览器会话可复用于同一站点的表单提交（指纹一致，过审率高）
-- 成功率/耗时进 run_log，日报呈现；连续失败的站点自动降级人工队列
-- 付费打码 API 配置默认为空 = 完全免费模式运行
+CUA channel notes:
+- Depends on local Chrome + browser automation — the **only local-environment dependency** in the whole system (user-ratified)
+- A browser session that solved a captcha can be reused for that site's form submission (same fingerprint → higher pass rate)
+- Success rate / duration go to run_log and the daily report; sites failing repeatedly are auto-downgraded to the human queue
+- Paid solver config defaults to empty = runs in fully free mode
 
-护栏：
-1. CUA 通道并发=1（单机单浏览器），当日队列按站点串行，避免并发挑战触发风控
-2. 验证码失败不重试（浪费配额），直接转人工
-3. 若未来启用付费 API：月预算上限进配置，超限自动降级
+Guardrails:
+1. CUA concurrency = 1 (single machine, single browser); same-day queues run per-site serially to avoid triggering anti-bot by parallel challenges
+2. Captcha failures are never retried (wastes quota) — straight to human queue
+3. If a paid API is ever enabled: monthly budget cap in config; exceeding it auto-downgrades
 
-### 7.2 全自动护栏（wave2 邮件直发的风险控制）
-1. 每域名/每项目双层每日配额
-2. 发送预热期（新模板前 N 天低量）
-3. 退信/拒收域名自动进排除列表
-4. 所有已发内容进 run_log 可审计
+### 7.2 Full-automation guardrails (wave2 email risks)
 
----
-
-## 8. 每日邮件汇报（可配置）
-
-内容五段：
-1. 今日计划（条目数、分项目、分通道）
-2. 昨日完成 / 失败明细
-3. 待人工确认队列（新匹配数量，附 top10 预览）
-4. 池变化（新增、分类变化、DR 更新、死链）
-5. 待人工处理项（转人工队列、需拍板事项）
-
-收件人空 = 跳过发送，仅落盘 run_log。发送时间随 scheduler 配置。
+1. Two-tier daily quotas: per domain / per project
+2. Warm-up period (new templates start low-volume for N days)
+3. Bounced/refused domains auto-enter the exclusion list
+4. Everything sent is auditable in run_log
 
 ---
 
-## 9. 独立性与数据隔离
+## 8. Daily email report (configurable)
 
-### 9.1 无 .workbuddy 依赖
-- 纯 Python3 标准库 + PyYAML；HTTP 用 requests（唯一第三方，可降级为 urllib）
-- 不依赖 .workbuddy、MCP、任何现有系统代码——只读外部**产物文件**（competitor-links-*.json 等）
-- 凭据只从环境变量/env 文件读，不进代码库
+Five sections:
+1. Today's plan (item counts, by project, by channel)
+2. Yesterday's completions / failures detail
+3. Pending-confirmation queue (new matches count, top-10 preview)
+4. Pool changes (new entries, classification changes, DR updates, dead links)
+5. Human-action items (human-queue entries, decisions needed)
 
-### 9.2 用户数据与仓库代码隔离（硬规则）
-- **GitHub 源码零私有信息**：仓库只含源码、文档、YAML 结构样例（占位值）
-- **用户数据以「新建工程导入」方式进入**：`import` CLI 把外部数据文件（WDC 产物、收割 JSON/CSV）读入工程私有数据目录 `data/`（SQLite + 原始文件），`data/`、`config/secrets*`、`*.env` 全部进 .gitignore，永不上传
-- 数据目录可整体迁出仓库（配置 `data_root` 指向仓库外路径，如 `~/outreach-data/`），实现代码与数据彻底分离——换机器/重装只带配置与数据目录
-- 排查清单（提交前自动检查）：private-scan 工具扫描待提交文件中的邮箱/密码/域名台账特征，命中即拒绝提交
-- WDC 原始图数据（~3GB）不入库不入 git，由 dl.sh 按需下载到本地缓存
-
-### 9.3 唯一本机依赖
-- CUA 验证码通道依赖本机 Chrome + 浏览器自动化（用户拍板：CUA 免费）；除此之外无其他环境依赖，其余流程（导入/探测/匹配/计划/邮件）纯 HTTP + SQLite
-- CUA 仅用于验证码与需要真实指纹的提交，普通 HTTP 表单不启浏览器
+Empty recipient = skip sending, run_log only. Send time follows scheduler config.
 
 ---
 
-## 10. 待拍板 / 后续步骤
+## 9. Independence & data isolation
 
-1. ~~WDC 数据的确切输入~~ **已确认（2026-11-18）**：
-   - 输入产物 = `backlink-prospector/data/competitor-links-<center>.json`（现有 4 份产物文件已复制进项目，文件名按内容哈希中性化，映射表仅存于本地 data/sources/index.json）
-   - 处理代码已原样复制到 `outreach-scheduler/import/`（harvest_competitor_links.py、competitor_backlinks.py、export_wdc_fast.py、dl.sh + README 链路说明），无私有信息
-   - 原始图数据 ~3GB 本地缓存不入 git
-   - 「其他类似数据」仍待提供样例（JSON/CSV 各一份）
-2. **打码服务商**：默认不启用（CUA 免费通道优先）；付费 API 是否完全放弃，待 CUA 实测吞吐后再定
-3. 仓库命名确认：`outreach-scheduler`（备选 backlink-outreach-ops / bl-campaign-pilot）
-4. git init + GitHub 建仓（hhool/outreach-scheduler）：**提交前先落 .gitignore（data/、*.env、config/secrets*）+ private-scan 钩子**（§9.2 硬规则）
-5. Phase 1 架构决策清单：目录结构、建表 SQL、competitor-links→pool 字段映射表（via_competitors/inbound 保留为打分先验）、探测规则清单
-6. wave2 邮件全自动的模板与预热策略需要一版细则
-7. 首个项目建议用产物最全的现成站点（本地映射表可查），验证「导入→探测→匹配→确认→执行→汇报」全链路
+### 9.1 No external-toolchain dependency
+- Python3 stdlib + PyYAML; HTTP via requests (the only third-party, degradable to urllib)
+- No external agent toolchain, no MCP, no existing-system code — reads external **product files** only (competitor-links-*.json etc.)
+- Credentials read only from env vars / env files, never in the codebase
+- **Paths never reference other private folders** (user rule, 2026-11-18): all paths point inside this project folder, or to a folder named after this project (e.g. the outreach-scheduler-data folder in the home directory); no home dot-folder paths and no sibling-repo paths
+
+### 9.2 User-data vs repo-code isolation (hard rule)
+- **GitHub carries zero private information**: repo contains source, docs, YAML structure samples (placeholder values) only
+- **User data enters via "new-project import"**: the `import` CLI reads external data files (WDC products, harvested JSON/CSV) into the project-private `data/` (SQLite + raw files); `data/`, `config/secrets*`, `*.env` are all gitignored, never uploaded
+- The data dir can move out of the repo entirely (set `data_root` to an external folder named after this project, like `~/outreach-scheduler-data/`) — machine moves / reinstalls only need config + data dir
+- Pre-commit checklist (automated): private-scan checks staged files for emails/passwords/domain-ledger signatures; any hit blocks the commit
+- **Domains never appear in file names or file contents** (user rule, 2026-11-18): product files carry neutral content-hashed names; the name mapping lives only in the gitignored local index; own-site/competitor domains in docs and code are replaced with placeholders
+- Raw WDC graph data (~3GB) never enters the repo or git; dl.sh downloads to a local cache on demand
+
+### 9.3 The only local dependency
+- The CUA captcha channel depends on local Chrome + browser automation (ratified: CUA free); nothing else does — import/probe/match/plan/email are pure HTTP + SQLite
+- CUA is used only for captchas and fingerprint-sensitive submissions; ordinary HTTP forms never launch a browser
+
+### 9.4 Doc language convention
+- English-primary `.md`; Chinese translations in `.zh.md` (e.g. `DESIGN.md` / `DESIGN.zh.md`)
+
+---
+
+## 10. Open items / next steps
+
+1. ~~Exact WDC input~~ **Confirmed (2026-11-18)**:
+   - Input products = `competitor-links-<center>.json` (existing 4 product files copied into the project; file names neutralized by content hash; the mapping lives only in the local gitignored index)
+   - Processing code copied as-is into `outreach-scheduler/import/` (harvest_competitor_links.py, competitor_backlinks.py, export_wdc_fast.py, dl.sh + README), no private info
+   - Raw graph data ~3GB cached locally, never in git
+   - "Other similar data" samples still pending (one JSON, one CSV)
+2. **Paid solver**: default off (CUA free channel first); whether to abandon paid APIs entirely will be decided after measuring CUA throughput
+3. Repo name confirmation: `outreach-scheduler` (alternatives: backlink-outreach-ops / bl-campaign-pilot)
+4. git init + GitHub repo (hhool/outreach-scheduler): **before first push, land .gitignore (data/, *.env, config/secrets*) + private-scan hook** (§9.2 hard rule)
+5. Phase 1 architecture decision list: directory structure, table DDL, competitor-links→pool field mapping (via_competitors/inbound kept as scoring priors), probe rule list
+6. wave2 full-auto email needs a detail pass: templates & warm-up policy
+7. First project: use the site with the richest products (findable via the local mapping), validating the full chain import → probe → match → confirm → execute → report

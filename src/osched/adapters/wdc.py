@@ -1,7 +1,7 @@
 """WDC competitor-links adapter.
 
 Input: files produced by import/harvest_competitor_links.py (baseline code
-copied from backlink-prospector):
+baseline code from the internal harvest repository):
 
     {"meta": {...}, "rows": [
         {"url": "http://host/", "via_competitors": ["comp", ...], "inbound": n}

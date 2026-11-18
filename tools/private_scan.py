@@ -4,12 +4,14 @@
 Scans files about to be committed for private data:
   * personal emails
   * hardcoded passwords / API keys / secrets
-  * known credential strings  (detected via SHA-256 digests only)
-  * known private domains     (own sites + competitors; digests only)
+  * known credential strings      (detected via SHA-256 digests only)
+  * known private domains         (own sites + competitors; digests only)
+  * known private folder names    (other repos / tool dirs; digests only)
+  * private-looking paths         (~/ dotfolders, absolute home paths)
 
-This scanner never embeds plaintext credentials or domain names — the digest
-sets below are one-way hashes maintained by the operator.
-中文：提交前私有信息扫描，命中即拒绝提交。扫描器只存凭据/域名的 SHA256 摘要，绝不存明文。
+This scanner never embeds plaintext credentials, domain names, or folder
+names — the digest sets below are one-way hashes maintained by the operator.
+中文：提交前私有信息扫描，命中即拒绝提交。扫描器只存 SHA256 摘要，绝不存明文。
 
 Usage:
   python3 tools/private_scan.py [paths...]     # default: all non-ignored files
@@ -32,6 +34,13 @@ PATTERNS = [
     (re.compile(r"(?i)(api[_-]?key|secret|token)\s*[=:]\s*['\"][A-Za-z0-9]{16,}"),
      "hardcoded API key/secret"),
     (re.compile(r"(?i)_APP_PASSWORD\s*=\s*\S+"), "app password assignment"),
+    # Private-path rule (DESIGN.md §9.1): paths must stay inside this project
+    # or a folder named after this project — never other private folders.
+    # Built by concatenation so this source file itself stays pattern-clean.
+    (re.compile("~/" + chr(92) + ".(?!well-known)"),
+     "home dot-folder path: reference to another private folder"),
+    (re.compile(r"(?<![\w.])/" + "(?:Users|home)" + r"/[A-Za-z0-9_]+"),
+     "absolute home path (Users/home dir)"),
 ]
 
 # SHA-256 digests of known credential strings (plaintext lives only in the
@@ -63,6 +72,24 @@ DOMAIN_TOKEN_RE = re.compile(
     re.I,
 )
 
+# SHA-256 digests of known private folder names (other repos / tool dirs).
+# Digests only — the plaintext names never appear in this repo. Any token in
+# a file name or content hashing to one of these = leak of a private path.
+# NOTE: this project's own name (outreach-scheduler etc.) is intentionally
+# NOT here — project-named folders are the allowed exception.
+KNOWN_PRIVATE_FOLDER_SHA256 = {
+    "951eafd24750bed963e1b55e3e2b858c90a7a7740004b6ac07b4bd23b347f1b3",
+    "4613666d29e69b6b5296d15ed54daa32a4053b0f2630ceb671c2b2ff8d259f30",
+    "0701e93b80541eb75b975d41bdd944cd901351c82546c795529e89376d98b904",
+    "141de3607294359efa20824d76e730c9664ad02074e0531cbc79e4400b02be6a",
+    "11457675a915f0ade000b741b36009ad309a700425ba9e64b59b7825f0080843",
+    "4ba87ef1f6dfaaec24e0760c68325a938d9d8251c8857267c580fa2ea8d9a7bf",
+}
+
+# Token candidates for folder-name matching: words with hyphens/dots,
+# lowercase-hashed before digest comparison.
+FOLDER_TOKEN_RE = re.compile(r"[A-Za-z][A-Za-z0-9](?:[A-Za-z0-9._-]*[A-Za-z0-9])?")
+
 ALLOW_EXTS = {".py", ".sh", ".yaml", ".yml", ".md", ".json", ".toml", ".txt"}
 TOKEN_RE = re.compile(r"[A-Za-z0-9]{16,}")
 
@@ -85,10 +112,20 @@ def _private_domain_token(line: str) -> str | None:
     return None
 
 
+def _private_folder_token(line: str) -> str | None:
+    for tok in FOLDER_TOKEN_RE.findall(line):
+        if _digest(tok) in KNOWN_PRIVATE_FOLDER_SHA256:
+            return tok
+    return None
+
+
 def _check_filename(path: Path) -> str | None:
     for token in DOMAIN_TOKEN_RE.findall(path.name):
         if _digest(token) in KNOWN_PRIVATE_DOMAIN_SHA256:
             return token
+    for tok in FOLDER_TOKEN_RE.findall(path.name):
+        if _digest(tok) in KNOWN_PRIVATE_FOLDER_SHA256:
+            return tok
     return None
 
 
@@ -139,6 +176,10 @@ def scan(paths: list[str]) -> int:
                 dom = _private_domain_token(line)
                 if dom:
                     label = f"private domain ({dom})"
+            if label is None:
+                fld = _private_folder_token(line)
+                if fld:
+                    label = f"private folder name ({fld})"
             if label:
                 print(f"[PRIVATE] {path}:{line_no}: {label}")
                 print(f"    {line.strip()[:120]}")
