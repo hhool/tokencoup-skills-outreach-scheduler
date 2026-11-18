@@ -309,16 +309,21 @@ Facebook developer app review, billing period boundary definition
 <h2>6. Deployment topology (ratified 2026-11-18)</h2>
 <p><strong>Frontend on Cloudflare Pages, backend on fly.io.</strong></p>
 <ul>
-<li><code>frontend/</code> is a static SPA (index.html + app.js + styles.css, vanilla
-  JS, no build step). Deployed via <code>wrangler pages deploy frontend
-  --project-name osched-portal</code>.</li>
+<li><code>frontend/</code> root is the <strong>LinkAttest marketing landing page</strong>
+  (index.html + landing.css, pure CSS, no JS): hero with a live-link
+  ledger mockup, stats strip, how-it-works, differentiators, the
+  ratified pricing tiers, FAQ. Portal CTAs link into <code>/app/</code>.</li>
+<li>The client portal SPA lives at <code>frontend/app/</code> (index.html + app.js +
+  styles.css, vanilla JS, hash routing, routes <code>#/login</code> <code>#/dashboard</code>
+  <code>#/reports</code> <code>#/new</code> <code>#/admin</code>). Deployed via <code>wrangler pages deploy
+  frontend --project-name osched-portal</code>.</li>
 <li>The SPA calls the fly backend's JSON API (<code>/api/*</code>) cross-origin with
   a bearer token in the <code>X-Auth-Token</code> header (localStorage). The API
   answers with permissive CORS (<code>Access-Control-Allow-Origin: *</code>) —
   auth is the token, not cookies, so wildcard origin is safe here.</li>
 <li>The fly app keeps serving the legacy HTML pages on the same routes as
   a fallback; both UIs share the same API and database.</li>
-<li><code>API_BASE</code> in <code>frontend/app.js</code> is the single touch point when the
+<li><code>API_BASE</code> in <code>frontend/app/app.js</code> is the single touch point when the
   backend moves to a custom domain.</li>
 <li>Super-admin bootstrap: <code>PORTAL_ADMIN_EMAILS</code> (fly env) seeds the
   <code>admin_whitelist</code> at boot; whitelist members get role=admin at
@@ -590,8 +595,12 @@ run_log + link_verify 聚合——与 B4 profile 同一套聚合，以趋势图�
 <h2>6. 部署拓扑（2026-11-18 定稿）</h2>
 <p><strong>前端 Cloudflare Pages，后台 fly.io。</strong></p>
 <ul>
-<li><code>frontend/</code> 是静态 SPA（index.html + app.js + styles.css，原生 JS，
-  无构建步骤）。部署：<code>wrangler pages deploy frontend --project-name
+<li><code>frontend/</code> 根目录是 <strong>LinkAttest 营销落地页</strong>（index.html +
+  landing.css，纯 CSS 无 JS）：实链台账 mockup 主视觉、数据条、
+  流程四步、差异化六卡、定稿定价档位、FAQ；门户 CTA 指向 <code>/app/</code>。</li>
+<li>客户门户 SPA 在 <code>frontend/app/</code>（index.html + app.js + styles.css，
+  原生 JS，hash 路由 <code>#/login</code> <code>#/dashboard</code> <code>#/reports</code> <code>#/new</code>
+  <code>#/admin</code>）。部署：<code>wrangler pages deploy frontend --project-name
   osched-portal</code>。</li>
 <li>SPA 跨域调用 fly 后端 JSON API（<code>/api/*</code>），bearer token 放
   <code>X-Auth-Token</code> 头（localStorage）。API 返回宽松 CORS
@@ -599,7 +608,7 @@ run_log + link_verify 聚合——与 B4 profile 同一套聚合，以趋势图�
   通配 origin 在此安全。</li>
 <li>fly 应用同时保留旧版 HTML 页面作回退；两个 UI 共用同一 API 与
   数据库。</li>
-<li><code>frontend/app.js</code> 的 <code>API_BASE</code> 是后端换自定义域名时的唯一触点。</li>
+<li><code>frontend/app/app.js</code> 的 <code>API_BASE</code> 是后端换自定义域名时的唯一触点。</li>
 <li>超管引导：<code>PORTAL_ADMIN_EMAILS</code>（fly env）在启动时播种
   <code>admin_whitelist</code>；白名单成员注册/登录即得 role=admin。管理端：
   审批请求、设额度、管白名单（最后一个白名单条目不可移除）。</li>

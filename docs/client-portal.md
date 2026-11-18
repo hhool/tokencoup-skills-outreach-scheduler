@@ -191,16 +191,21 @@ Facebook developer app review, billing period boundary definition
 
 **Frontend on Cloudflare Pages, backend on fly.io.**
 
-- `frontend/` is a static SPA (index.html + app.js + styles.css, vanilla
-  JS, no build step). Deployed via `wrangler pages deploy frontend
-  --project-name osched-portal`.
+- `frontend/` root is the **LinkAttest marketing landing page**
+  (index.html + landing.css, pure CSS, no JS): hero with a live-link
+  ledger mockup, stats strip, how-it-works, differentiators, the
+  ratified pricing tiers, FAQ. Portal CTAs link into `/app/`.
+- The client portal SPA lives at `frontend/app/` (index.html + app.js +
+  styles.css, vanilla JS, hash routing, routes `#/login` `#/dashboard`
+  `#/reports` `#/new` `#/admin`). Deployed via `wrangler pages deploy
+  frontend --project-name osched-portal`.
 - The SPA calls the fly backend's JSON API (`/api/*`) cross-origin with
   a bearer token in the `X-Auth-Token` header (localStorage). The API
   answers with permissive CORS (`Access-Control-Allow-Origin: *`) —
   auth is the token, not cookies, so wildcard origin is safe here.
 - The fly app keeps serving the legacy HTML pages on the same routes as
   a fallback; both UIs share the same API and database.
-- `API_BASE` in `frontend/app.js` is the single touch point when the
+- `API_BASE` in `frontend/app/app.js` is the single touch point when the
   backend moves to a custom domain.
 - Super-admin bootstrap: `PORTAL_ADMIN_EMAILS` (fly env) seeds the
   `admin_whitelist` at boot; whitelist members get role=admin at

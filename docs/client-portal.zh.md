@@ -170,8 +170,12 @@ run_log + link_verify 聚合——与 B4 profile 同一套聚合，以趋势图�
 
 **前端 Cloudflare Pages，后台 fly.io。**
 
-- `frontend/` 是静态 SPA（index.html + app.js + styles.css，原生 JS，
-  无构建步骤）。部署：`wrangler pages deploy frontend --project-name
+- `frontend/` 根目录是 **LinkAttest 营销落地页**（index.html +
+  landing.css，纯 CSS 无 JS）：实链台账 mockup 主视觉、数据条、
+  流程四步、差异化六卡、定稿定价档位、FAQ；门户 CTA 指向 `/app/`。
+- 客户门户 SPA 在 `frontend/app/`（index.html + app.js + styles.css，
+  原生 JS，hash 路由 `#/login` `#/dashboard` `#/reports` `#/new`
+  `#/admin`）。部署：`wrangler pages deploy frontend --project-name
   osched-portal`。
 - SPA 跨域调用 fly 后端 JSON API（`/api/*`），bearer token 放
   `X-Auth-Token` 头（localStorage）。API 返回宽松 CORS
@@ -179,7 +183,7 @@ run_log + link_verify 聚合——与 B4 profile 同一套聚合，以趋势图�
   通配 origin 在此安全。
 - fly 应用同时保留旧版 HTML 页面作回退；两个 UI 共用同一 API 与
   数据库。
-- `frontend/app.js` 的 `API_BASE` 是后端换自定义域名时的唯一触点。
+- `frontend/app/app.js` 的 `API_BASE` 是后端换自定义域名时的唯一触点。
 - 超管引导：`PORTAL_ADMIN_EMAILS`（fly env）在启动时播种
   `admin_whitelist`；白名单成员注册/登录即得 role=admin。管理端：
   审批请求、设额度、管白名单（最后一个白名单条目不可移除）。
