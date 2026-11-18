@@ -315,8 +315,13 @@ Facebook developer app review, billing period boundary definition
   ratified pricing tiers, FAQ. Portal CTAs link into <code>/app/</code>.</li>
 <li>The client portal SPA lives at <code>frontend/app/</code> (index.html + app.js +
   styles.css, vanilla JS, hash routing, routes <code>#/login</code> <code>#/dashboard</code>
-  <code>#/reports</code> <code>#/new</code> <code>#/admin</code>). Deployed via <code>wrangler pages deploy
-  frontend --project-name osched-portal</code>.</li>
+  <code>#/reports</code> <code>#/new</code> <code>#/admin</code> <code>#/pricing</code>). Deployed via
+  <code>wrangler pages deploy frontend --project-name osched-portal</code>.</li>
+<li><code>#/pricing</code> (public): the ratified per-live-link tiers + service
+  guarantee, auth-aware CTA. Dashboard v2 adds a next-steps card
+  (draft → verify button, verified → awaiting approval, rejected) and
+  quota progress bars with a trial countdown (<code>project_request.trial_until</code>,
+  set to +14d at trial activation; additive migration).</li>
 <li>The SPA calls the fly backend's JSON API (<code>/api/*</code>) cross-origin with
   a bearer token in the <code>X-Auth-Token</code> header (localStorage). The API
   answers with permissive CORS (<code>Access-Control-Allow-Origin: *</code>) —
@@ -600,8 +605,12 @@ run_log + link_verify 聚合——与 B4 profile 同一套聚合，以趋势图�
   流程四步、差异化六卡、定稿定价档位、FAQ；门户 CTA 指向 <code>/app/</code>。</li>
 <li>客户门户 SPA 在 <code>frontend/app/</code>（index.html + app.js + styles.css，
   原生 JS，hash 路由 <code>#/login</code> <code>#/dashboard</code> <code>#/reports</code> <code>#/new</code>
-  <code>#/admin</code>）。部署：<code>wrangler pages deploy frontend --project-name
-  osched-portal</code>。</li>
+  <code>#/admin</code> <code>#/pricing</code>）。部署：<code>wrangler pages deploy frontend
+  --project-name osched-portal</code>。</li>
+<li><code>#/pricing</code>（公开页）：定稿的按实链计价档位 + 服务保障，CTA 按
+  登录态分流。Dashboard v2 新增下一步指引卡（draft → 验证按钮、
+  verified → 等待审批、rejected 提示）和额度进度条 + 试用倒计时
+  （<code>project_request.trial_until</code>，trial 激活时写入 +14d；加列迁移）。</li>
 <li>SPA 跨域调用 fly 后端 JSON API（<code>/api/*</code>），bearer token 放
   <code>X-Auth-Token</code> 头（localStorage）。API 返回宽松 CORS
   （<code>Access-Control-Allow-Origin: *</code>）——鉴权靠 token 而非 cookie，

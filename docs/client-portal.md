@@ -197,8 +197,13 @@ Facebook developer app review, billing period boundary definition
   ratified pricing tiers, FAQ. Portal CTAs link into `/app/`.
 - The client portal SPA lives at `frontend/app/` (index.html + app.js +
   styles.css, vanilla JS, hash routing, routes `#/login` `#/dashboard`
-  `#/reports` `#/new` `#/admin`). Deployed via `wrangler pages deploy
-  frontend --project-name osched-portal`.
+  `#/reports` `#/new` `#/admin` `#/pricing`). Deployed via
+  `wrangler pages deploy frontend --project-name osched-portal`.
+- `#/pricing` (public): the ratified per-live-link tiers + service
+  guarantee, auth-aware CTA. Dashboard v2 adds a next-steps card
+  (draft → verify button, verified → awaiting approval, rejected) and
+  quota progress bars with a trial countdown (`project_request.trial_until`,
+  set to +14d at trial activation; additive migration).
 - The SPA calls the fly backend's JSON API (`/api/*`) cross-origin with
   a bearer token in the `X-Auth-Token` header (localStorage). The API
   answers with permissive CORS (`Access-Control-Allow-Origin: *`) —

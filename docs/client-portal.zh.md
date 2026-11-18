@@ -175,8 +175,12 @@ run_log + link_verify 聚合——与 B4 profile 同一套聚合，以趋势图�
   流程四步、差异化六卡、定稿定价档位、FAQ；门户 CTA 指向 `/app/`。
 - 客户门户 SPA 在 `frontend/app/`（index.html + app.js + styles.css，
   原生 JS，hash 路由 `#/login` `#/dashboard` `#/reports` `#/new`
-  `#/admin`）。部署：`wrangler pages deploy frontend --project-name
-  osched-portal`。
+  `#/admin` `#/pricing`）。部署：`wrangler pages deploy frontend
+  --project-name osched-portal`。
+- `#/pricing`（公开页）：定稿的按实链计价档位 + 服务保障，CTA 按
+  登录态分流。Dashboard v2 新增下一步指引卡（draft → 验证按钮、
+  verified → 等待审批、rejected 提示）和额度进度条 + 试用倒计时
+  （`project_request.trial_until`，trial 激活时写入 +14d；加列迁移）。
 - SPA 跨域调用 fly 后端 JSON API（`/api/*`），bearer token 放
   `X-Auth-Token` 头（localStorage）。API 返回宽松 CORS
   （`Access-Control-Allow-Origin: *`）——鉴权靠 token 而非 cookie，

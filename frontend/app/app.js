@@ -46,10 +46,12 @@ function nav(active) {
     items.push(["#/dashboard", "dashboard", "看板"]);
     items.push(["#/reports", "reports", "报告"]);
     items.push(["#/new", "new project", "新建项目"]);
+    items.push(["#/pricing", "pricing", "定价"]);
     if (me && me.role === "admin")
       items.push(["#/admin", "admin", "管理"]);
     items.push(["logout", "log out", "退出"]);
   } else {
+    items.push(["#/pricing", "pricing", "定价"]);
     items.push(["#/login", "log in", "登录"]);
   }
   $nav.innerHTML = items.map(([href, en, zh]) => href === "logout"
@@ -70,7 +72,7 @@ function card(html) { return `<div class="card">${html}</div>`; }
 const routes = {
   "#/login": pageAuth, "#/dashboard": pageDashboard,
   "#/reports": pageReports, "#/new": pageNew, "#/admin": pageAdmin,
-  "#/oauth": pageOAuth,
+  "#/oauth": pageOAuth, "#/pricing": pagePricing,
 };
 
 async function render() {
@@ -84,6 +86,45 @@ async function render() {
   nav(base.replace("#/", ""));
 }
 window.addEventListener("hashchange", render);
+
+// ---------------------------------------------------------------- pricing
+async function pagePricing() {
+  const cta = token
+    ? `<a class="btn" href="#/new">Create a project</a>`
+    : `<a class="btn" href="#/login">Start free trial</a>`;
+  $app.innerHTML = `
+  <h1>Pricing — per verified live link</h1>
+  <p class="muted">No subscription. You pay for links we confirm
+  <b>live</b> in the ledger; the attestation is the invoice.</p>
+  <div class="tiers">
+    ${card(`<h2>Trial</h2><p class="price">$0</p>
+      <p><b>3 live links</b> · 14-day window</p>
+      <p class="muted">One trial per verified domain — verify ownership
+      and create your first project to claim it.</p>
+      ${token ? `<a href="#/new">Claim trial →</a>` : `<a href="#/login">Sign up →</a>`}`)}
+    ${card(`<h2>Starter</h2><p class="price">$80</p>
+      <p>per live link · 1–9 links/month</p>
+      <p class="muted">For single-site owners testing directory outreach
+      as a channel.</p>`)}
+    ${card(`<h2>Growth</h2><p class="price">$65</p>
+      <p>per live link · 10–49 links/month</p>
+      <p class="muted">Most popular — steady monthly link velocity with
+      full ledger evidence.</p>`)}
+    ${card(`<h2>Scale</h2><p class="price">$50</p>
+      <p>per live link · 50+ links/month</p>
+      <p class="muted">Agency / portfolio volume; dedicated quota
+      planning.</p>`)}
+  </div>
+  ${card(`<h2>Service guarantee</h2>
+    <p>A link that never reaches <b>live</b> after auto-retry + human
+    fallback is <b>not billed</b>. Non-live states
+    (missing / unreachable / bot-blocked) are work-in-progress —
+    never charged.</p>
+    <p class="muted">Every consumed credit has a ledger row with the
+    confirmed URL and check timestamp — exportable as an invoice
+    attachment.</p>`)}
+  <div class="center">${cta}</div>`;
+}
 
 // ---------------------------------------------------------------- auth
 async function oauthStatus() {
@@ -174,21 +215,61 @@ async function pageDashboard() {
   requireAuth();
   const d = await api("/api/dashboard");
   let html = `<h1>Welcome, ${esc(d.email)}</h1>`;
+  // next steps — action-oriented, drives the whole business flow
+  const steps = [];
+  for (const p of d.pending || []) {
+    if (p.verify_state === "draft")
+      steps.push(`<tr><td>${esc(p.domain)}</td><td><span class="warn">verify pending</span></td>
+        <td><button onclick="verifyDomain(${p.id})">Verify ownership now</button>
+        <span class="muted">meta tag / DNS TXT</span></td></tr>`);
+    else if (p.verify_state === "verified")
+      steps.push(`<tr><td>${esc(p.domain)}</td><td><span class="warn">awaiting approval</span></td>
+        <td class="muted">admin reviews within 24h — no action needed</td></tr>`);
+    else if (p.verify_state === "rejected")
+      steps.push(`<tr><td>${esc(p.domain)}</td><td><span class="bad">rejected</span></td>
+        <td class="muted">contact support or re-create with corrected details</td></tr>`);
+  }
+  if (!d.projects.length && !steps.length) {
+    steps.push(`<tr><td colspan="3" class="muted">No project yet — create
+      your first promotion project to claim the 3-link free trial.</td></tr>`);
+  }
+  if (steps.length) {
+    html += card(`<h2>Next steps</h2>
+      <table><tr><th>project</th><th>state</th><th>action</th></tr>
+      ${steps.join("")}</table>`);
+  }
   if (!d.projects.length) {
     html += card(`<p class="muted">No active project yet.
       <a href="#/new">Create your promotion project</a> — first verified
       project gets 3 trial live links.</p>`);
     $app.innerHTML = html; return;
   }
+  // quota — progress bar, remaining credits, trial countdown
+  const quotaRows = d.projects.map(p => {
+    const pct = p.quota_total ? Math.min(100, Math.round(100 * p.live / p.quota_total)) : 0;
+    const remain = Math.max(0, p.quota_total - p.quota_used);
+    let trial = "";
+    if (p.quota_type === "trial" && p.trial_until) {
+      const days = Math.ceil((new Date(p.trial_until.replace(" ", "T") + "Z") - Date.now()) / 86400000);
+      trial = days > 0 ? `<span class="ok">${days}d left</span>`
+                       : `<span class="bad">window closed</span>`;
+    }
+    return `<tr><td>${esc(p.domain)}</td><td>${esc(p.quota_type)}</td>
+      <td><div class="qbar ${pct >= 100 ? "full" : ""}"><i style="width:${pct}%"></i></div>
+        <small class="muted">${pct}%</small></td>
+      <td>${p.quota_used} used · ${remain} left</td>
+      <td>${trial || "—"}</td>
+      <td>${p.live} / ${p.quota_total}</td>
+      <td>${p.live_month}</td>
+      <td>${p.inflight}</td><td>${p.pending}</td><td>${p.live30}</td></tr>`;
+  }).join("");
   html += card(`<h2>Quota consumption</h2>
-    <table><tr><th>project</th><th>type</th><th>live / quota</th>
+    <table><tr><th>project</th><th>type</th><th>consumed</th>
+    <th>credits</th><th>trial</th><th>live / quota</th>
     <th>live (month)</th><th>in flight</th><th>pending</th><th>live (30d)</th></tr>
-    ${d.projects.map(p => `<tr><td>${esc(p.domain)}</td><td>${esc(p.quota_type)}</td>
-      <td>${p.live} / ${p.quota_total}</td><td>${p.live_month}</td>
-      <td>${p.inflight}</td><td>${p.pending}</td><td>${p.live30}</td></tr>`).join("")}
-    </table>
+    ${quotaRows}</table>
     <p class="muted">Only confirmed live links consume credits; in-flight and
-    never-live items are not billed.</p>`);
+    never-live items are not billed. <a href="#/pricing">Pricing →</a></p>`);
   html += card(`<h2>Delivery capacity today</h2>
     ${d.capacity.length ? `<table><tr><th>placement domain</th><th>addresses used</th></tr>
       ${d.capacity.map(c => `<tr><td>${esc(c.placement)}</td><td>${c.used} / 100</td></tr>`).join("")}

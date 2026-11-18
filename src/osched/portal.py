@@ -75,6 +75,7 @@ CREATE TABLE IF NOT EXISTS project_request (
   quota_type    TEXT NOT NULL DEFAULT 'trial',
   quota_total   INTEGER NOT NULL DEFAULT 3,
   quota_used    INTEGER NOT NULL DEFAULT 0,
+  trial_until   TEXT,                   -- trial window expiry (activated +14d)
   created_at    TEXT NOT NULL DEFAULT (datetime('now')),
   UNIQUE(client_id, domain)
 );
@@ -104,6 +105,11 @@ def _migrate_portal(conn: sqlite3.Connection) -> None:
     if "role" not in cols:
         conn.execute("ALTER TABLE client ADD COLUMN role TEXT "
                      "NOT NULL DEFAULT 'client'")
+    req_cols = {r["name"] for r in conn.execute(
+        "PRAGMA table_info(project_request)").fetchall()}
+    if "trial_until" not in req_cols:
+        conn.execute("ALTER TABLE project_request ADD COLUMN "
+                     "trial_until TEXT")
 
 
 def seed_admin_whitelist(conn: sqlite3.Connection, cfg: dict) -> None:
@@ -420,9 +426,12 @@ def activate_request(conn, req) -> dict:
                 (project_id, kind, content))
     conn.execute(
         """UPDATE project_request SET verify_state='active', project_id=?,
-           quota_type=?, quota_total=?, quota_used=0 WHERE id=?""",
+           quota_type=?, quota_total=?, quota_used=0,
+           trial_until=(CASE WHEN ?='trial'
+             THEN datetime('now','+14 days') ELSE trial_until END)
+           WHERE id=?""",
         (project_id, "trial" if trial else "paid",
-         credits if trial else 0, req["id"]))
+         credits if trial else 0, "trial" if trial else "paid", req["id"]))
     conn.commit()
     return {"project_id": project_id, "trial": trial, "credits": credits}
 
@@ -435,7 +444,7 @@ def _client_projects(conn, client_id: int):
     return conn.execute(
         """
         SELECT pr.id AS project_id, pr.domain, req.quota_type, req.quota_total,
-          req.quota_used,
+          req.quota_used, req.trial_until,
           (SELECT COUNT(*) FROM match m WHERE m.project_id=pr.id
              AND m.state='pending') AS pending,
           (SELECT COUNT(*) FROM plan pl WHERE pl.project_id=pr.id
@@ -452,6 +461,16 @@ def _client_projects(conn, client_id: int):
         WHERE req.client_id=? AND req.verify_state='active'
         ORDER BY pr.domain
         """, (client_id,)).fetchall()
+
+
+def _pending_projects(conn, client_id: int):
+    """Requests not yet delivering — drives the dashboard next-steps card."""
+    return conn.execute(
+        """SELECT id, domain, verify_state, verify_method, verify_token,
+                  created_at
+           FROM project_request WHERE client_id=?
+             AND verify_state IN ('draft','verified','rejected')
+           ORDER BY created_at DESC""", (client_id,)).fetchall()
 
 
 def _live_ledger(conn, client_id: int, limit: int = 20):
@@ -1074,6 +1093,8 @@ class PortalHandler(BaseHTTPRequestHandler):
         payload = {
             "email": client["email"], "role": client["role"],
             "projects": projects,
+            "pending": [dict(r) for r in
+                        _pending_projects(self.conn, client["id"])],
             "capacity": [dict(r) for r in
                          _capacity_rows(self.conn, client["id"], day)],
             "ledger": [dict(r) for r in
