@@ -8,6 +8,9 @@ Subcommands:
   queue    List pending matches for a project (the human gate)
   confirm  Confirm pending matches by id (or --top N by score)
   reject   Reject pending matches by id
+  schedule Fill future dates from confirmed matches (§5/§7)
+  plan     Show queued plans due for execution
+  execute  Run due plan rows — form POST / CUA routing / SMTP (§7/§7.1)
   stats    Pool summary
   scan     Private-information scan over tracked files (pre-commit gate)
 
@@ -39,6 +42,7 @@ from osched import probe as probe_mod
 from osched import matching
 from osched import classify as classify_mod
 from osched import scheduler as sched_mod
+from osched import executor as exec_mod
 
 PROJECT_YAML_TEMPLATE = """\
 # Project config for {domain} — lives under data_root/projects/ (gitignored).
@@ -271,6 +275,21 @@ def cmd_plan(cfg: dict, domain: str) -> int:
     return 0
 
 
+def cmd_execute(cfg: dict, domain: str, run_date: str | None,
+                dry_run: bool, limit: int) -> int:
+    conn = connect(data_root(cfg))
+    project = _get_project(cfg, conn, domain)
+    stats = exec_mod.run_execution(
+        conn, cfg, project, run_date=run_date,
+        dry_run=dry_run, limit=limit)
+    tag = " [DRY-RUN]" if dry_run else ""
+    print(f"execute[{domain}]{tag}: " + json.dumps(stats, ensure_ascii=False))
+    for r in stats.get("rows", []):
+        print(f"  plan_id={r['plan_id']:<5} {r['channel']:<6} "
+              f"{r['state']:<9} {r['domain']:<28} {r['note']}")
+    return 0
+
+
 def cmd_stats(cfg: dict) -> int:
     conn = connect(data_root(cfg))
     rows = conn.execute(
@@ -339,6 +358,12 @@ def main(argv: list[str] | None = None) -> int:
     p_sch.add_argument("--days", type=int, default=7)
     p_plan = sub.add_parser("plan", help="show queued plans due for execution")
     p_plan.add_argument("domain")
+    p_exec = sub.add_parser("execute", help="run due plan rows (§7)")
+    p_exec.add_argument("domain")
+    p_exec.add_argument("--date", default=None,
+                        help="override today (ISO date)")
+    p_exec.add_argument("--dry-run", action="store_true")
+    p_exec.add_argument("--limit", type=int, default=0)
     sub.add_parser("stats", help="pool summary")
     args = ap.parse_args(argv)
 
@@ -366,6 +391,9 @@ def main(argv: list[str] | None = None) -> int:
         return cmd_schedule(cfg, args.domain, args.days)
     if args.cmd == "plan":
         return cmd_plan(cfg, args.domain)
+    if args.cmd == "execute":
+        return cmd_execute(cfg, args.domain, args.date, args.dry_run,
+                           args.limit)
     if args.cmd == "stats":
         return cmd_stats(cfg)
     return 2

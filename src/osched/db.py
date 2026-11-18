@@ -74,6 +74,18 @@ CREATE TABLE IF NOT EXISTS plan (
   UNIQUE(match_id, scheduled_date)
 );
 
+-- Per-project content assets (DESIGN.md §5a): TDK, site-summary, category,
+-- sender identity copy. Fallback chain lives in the consumers.
+CREATE TABLE IF NOT EXISTS project_asset (
+  id         INTEGER PRIMARY KEY AUTOINCREMENT,
+  project_id INTEGER NOT NULL REFERENCES project(id),
+  kind       TEXT NOT NULL,          -- site-title | site-summary | category | ...
+  content    TEXT NOT NULL,
+  source     TEXT NOT NULL DEFAULT 'manual',   -- manual | probe | template
+  updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+  UNIQUE(project_id, kind)
+);
+
 CREATE TABLE IF NOT EXISTS run_log (
   id      INTEGER PRIMARY KEY AUTOINCREMENT,
   ts      TEXT NOT NULL DEFAULT (datetime('now')),
