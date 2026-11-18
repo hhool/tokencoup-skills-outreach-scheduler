@@ -38,6 +38,8 @@ Key design consequence: WDC/similar data are **raw competitor backlinks** (exter
 | 4 | Email report | Sent automatically; **recipient defaults to empty = not sent**; enabling happens via config |
 | 5 | Human confirmation after matching | **Required.** Auto-match → pending queue → human selection → scheduled plan → executor only runs confirmed items |
 | 6 | Doc language | **English-primary `.md` / Chinese `.zh.md`** |
+| 7 | Submit paths (round 5) | **Discovered submit paths are recorded and reused**; paths are re-verified and updated promptly when they change (§4c) |
+| 8 | Project assets (round 5) | **New project input = a domain.** Site TDK, level-1/2 page URLs, blog articles, outreach email copy are collected per project; missing items are probed; if probing fails, generic templates fill in (§5a) |
 
 ---
 
@@ -106,6 +108,16 @@ plan        schedule & execution record
 
 run_log     execution log
   id, ts, action, target, result, note
+
+probe_cache  submit-path cache (recorded discoveries, reusable; §4c)
+  id, domain, entry_url, form_signature(field-name hash), captcha_type,
+  contact_email, success_count, last_probed, last_verified,
+  state(valid|changed|gone|blocked),
+  history(JSON: [{ts, old_entry, new_entry, reason}])
+
+project_asset  per-project site assets (§5a)
+  id, project_id, kind(tdk|page|article|email_copy),
+  source(provided|probed|template), content, url(nullable), fetched_at
 ```
 
 Configuration never lives in the database — all YAML (§6); changing config changes behavior.
@@ -175,6 +187,28 @@ Data flow: `SourceAdapter → SourceRecord → probe → classify → DR enrichm
 
 ---
 
+## 4c. Submit-path cache: record, reuse, keep fresh (round 5)
+
+Submit endpoints discovered during probing are **first-class assets**, not
+transient probe output — they are persisted in `probe_cache` and reused:
+
+**Record**
+- Every discovered entry (URL + form signature + captcha type + contact email) lands in `probe_cache` at probe time
+- `form_signature` = hash of the form's field names — the field mapping itself is the reusable piece
+- Successful submissions bump `success_count`; the proven chain (entry → fields → captcha handling) is what gets replayed
+
+**Reuse**
+- Same domain matched again (new project, new submission round) → take the cached path directly, skip full re-probing (saves time and request quota)
+- Same-CMS / same-template sites (identical `form_signature`) → reuse the field mapping, only verify the URL
+
+**Keep fresh (update promptly on change)**
+1. Light pre-submit check: HEAD/GET the cached `entry_url`; 404/redirect → re-probe before submitting
+2. Submit failure caused by form mismatch (missing/renamed fields) → mark `suspect`, re-probe immediately
+3. Low-frequency background audit (default every 30 days) keeps long-tail entries valid
+4. Every change appends to `history` (old path → new path → reason → timestamp); never overwritten silently, fully auditable
+
+---
+
 ## 5. Matching & scoring
 
 ```
@@ -189,6 +223,27 @@ score = w1×category match (0/1)
 - Weights and threshold live in YAML, overridable per project
 - Output enters the project's pending-confirmation queue sorted by score descending; scheduling is generated only after human selection
 - Schedule generation: fill future dates from the confirmed pool respecting daily_quota
+
+---
+
+## 5a. Project assets: TDK, pages, articles, email copy (round 5)
+
+Creating a project takes **just a domain**. The system then assembles four
+asset kinds, each with a three-level fallback: `provided` (user supplied) →
+`probed` (auto-discovered) → `template` (generic template).
+
+| Asset | Used for | provided | probed | fallback |
+|-------|----------|----------|--------|----------|
+| **TDK** (title / description / keywords) | directory-form title/desc fields, outreach copy | user fills in | fetch homepage meta + og: tags | none — marked `missing`, flagged in the daily report for manual fill (TDK cannot be genericized) |
+| **Level-1/2 page URLs** (specific paths under the domain) | landing-URL choice per submission | user lists them | sitemap/RSS/nav discovery → pending-confirmation queue | homepage only |
+| **Blog articles** | guest_post / article submission bodies | site's article list | sitemap/RSS harvest | **generic article template** |
+| **Outreach email copy** | wave2 email sends | project-specific template | — | **generic outreach email template** |
+
+Rules:
+- Templates live in `templates/` with placeholders (`{domain}`, `{title}`, `{description}`, `{url}`, `{page}`); rendering injects the project's own assets — a project with real assets never sees template text
+- Probed assets (TDK, pages, articles) are **cached in `project_asset` and reused** — no refetch per submission, re-probe only on staleness
+- Every asset row records its `source` (provided/probed/template), so the daily report can show "this project is running on N template-backed assets" as a quality signal
+- Level-1/2 page discovery lands in the pending-confirmation queue (same gate as matching) — auto-discovered pages are confirmed by a human before being used as landing URLs
 
 ---
 
@@ -316,6 +371,12 @@ Empty recipient = skip sending, run_log only. Send time follows scheduler config
 ---
 
 ## 10. Open items / next steps
+
+0. **Round-5 ratification pending (2026-11-18):**
+   - TDK probing fails (no meta at all): mark `missing` + daily-report reminder (current design) — or degrade to a domain-derived placeholder title?
+   - Generic article template content strategy: original placeholder text vs. site-summary derived text?
+   - Level-1/2 page URLs: manual input only, or sitemap candidates + human confirmation (current design)?
+   - Submit-path freshness audit interval: 30 days default OK?
 
 1. ~~Exact WDC input~~ **Confirmed (2026-11-18)**:
    - Input products = `competitor-links-<center>.json` (existing 4 product files copied into the project; file names neutralized by content hash; the mapping lives only in the local gitignored index)
