@@ -72,4 +72,4 @@ Full loop: `docs/operations.md` (cron) · `docs/client-intake.md`
 - [x] Phase 3: project matching + human confirmation queue
 - [x] Phase 4: plan scheduler + wave1 form submit (HTTP-first) + wave2 SMTP
 - [x] Phase 5: daily report email; DR via Open PageRank (free tier)
-- Next: business layer B1–B6 — see docs/business.md
+- Next: business layer B1–B6 (commercialization) — see docs/business.md

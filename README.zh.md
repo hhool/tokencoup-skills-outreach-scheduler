@@ -61,4 +61,4 @@ python3 bin/osched.py stats                         # 池摘要
 - [x] Phase 3：项目匹配 + 人工确认队列
 - [x] Phase 4：排期执行器 + wave1 表单直投（HTTP 优先）+ wave2 SMTP
 - [x] Phase 5：每日邮件汇报；DR 用 Open PageRank 免费层
-- 下一阶段：业务层 B1–B6——见 docs/business.zh.md
+- 下一阶段：业务层 B1–B6（商业化落地）——见 docs/business.zh.md

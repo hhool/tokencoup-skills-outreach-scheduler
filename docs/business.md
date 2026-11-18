@@ -1,11 +1,27 @@
-# Business layer — feature roadmap
+# Business layer — commercialization roadmap
 
-Derived from the shipped functional layer (import → probe → classify →
-match → human gate → schedule → execute → report). This doc records the
-ratified discussion: which business features build on that layer, in what
-order, and why. No functional-layer rework is implied.
+**Positioning: the business layer is the commercialization track.** The
+functional layer (import → probe → match → execute → report) is the
+*machine*; the business layer is what turns the machine into a client
+service that can be sold, delivered and renewed. Every item below either
+produces client-visible deliverables (B1/B2), extends deliverable service
+capacity (B3/B4), enables scaling to more clients (B5), or secures the
+supply that the service resells (B6).
+
+Derived from the shipped functional layer. This doc records the ratified
+discussion: which business features build on that layer, in what order,
+and why. No functional-layer rework is implied.
 
 中文版：business.zh.md。
+
+## Commercialization mapping
+
+| commercialization question | answers |
+|---------------------------|---------|
+| 客户凭什么付费？ What does the client pay for? | B1 live-link ledger + B2 client report |
+| 服务能力边界在哪？ What can we deliver? | B3 account lifecycle + B4 submittability |
+| 规模化靠什么？ How does it scale? | B5 multi-client ops view |
+| 货源谁保障？ Who secures supply? | B6 competitor refresh |
 
 ## Priority order: 1 → 2 → 3 first (proof-of-value closed loop), then 4/5 (efficiency), 6 (supply).
 
