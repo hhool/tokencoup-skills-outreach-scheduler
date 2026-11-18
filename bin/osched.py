@@ -44,6 +44,7 @@ from osched import classify as classify_mod
 from osched import scheduler as sched_mod
 from osched import executor as exec_mod
 from osched import report as report_mod
+from osched import cua as cua_mod
 
 PROJECT_YAML_TEMPLATE = """\
 # Project config for {domain} — lives under data_root/projects/ (gitignored).
@@ -302,6 +303,37 @@ def cmd_report(cfg: dict, run_date: str | None, dry_run: bool) -> int:
     return 0
 
 
+def cmd_cua(cfg: dict, domain: str, headless: bool, limit: int) -> int:
+    conn = connect(data_root(cfg))
+    project = _get_project(cfg, conn, domain)
+    stats = cua_mod.run_cua(conn, cfg, project, headless=headless,
+                            limit=limit)
+    print(f"cua[{domain}]: "
+          + json.dumps({k: v for k, v in stats.items() if k != "rows"},
+                       ensure_ascii=False))
+    for r in stats.get("rows", []):
+        print(f"  plan_id={r['plan_id']:<5} {r['state']:<9} "
+              f"{r['domain']:<28} {r['note']}")
+    return 0
+
+
+def cmd_asset(cfg: dict, domain: str, kind: str, content: str) -> int:
+    """Set one project asset (§5a): site-title/site-summary/contact-email/..."""
+    conn = connect(data_root(cfg))
+    project = _get_project(cfg, conn, domain)
+    conn.execute(
+        """INSERT INTO project_asset(project_id, kind, content, source)
+           VALUES(?,?,?,'manual')
+           ON CONFLICT(project_id, kind) DO UPDATE SET
+             content=excluded.content, source='manual',
+             updated_at=datetime('now')""",
+        (project["_id"], kind, content),
+    )
+    conn.commit()
+    print(f"asset set: {domain} {kind} = {content[:60]}")
+    return 0
+
+
 def cmd_stats(cfg: dict) -> int:
     conn = connect(data_root(cfg))
     rows = conn.execute(
@@ -380,6 +412,16 @@ def main(argv: list[str] | None = None) -> int:
     p_rep.add_argument("--date", default=None, help="report date (ISO)")
     p_rep.add_argument("--dry-run", action="store_true",
                        help="print only, never send")
+    p_cua = sub.add_parser("cua", help="run state='cua' plans in real Chrome (§7.1)")
+    p_cua.add_argument("domain")
+    p_cua.add_argument("--headless", action="store_true")
+    p_cua.add_argument("--limit", type=int, default=0)
+    p_asset = sub.add_parser("asset", help="set a project asset (§5a)")
+    p_asset.add_argument("domain")
+    p_asset.add_argument("kind",
+                         help="site-title | site-summary | contact-email | "
+                              "category | sender-name")
+    p_asset.add_argument("content")
     sub.add_parser("stats", help="pool summary")
     args = ap.parse_args(argv)
 
@@ -412,6 +454,10 @@ def main(argv: list[str] | None = None) -> int:
                            args.limit)
     if args.cmd == "report":
         return cmd_report(cfg, args.date, args.dry_run)
+    if args.cmd == "cua":
+        return cmd_cua(cfg, args.domain, args.headless, args.limit)
+    if args.cmd == "asset":
+        return cmd_asset(cfg, args.domain, args.kind, args.content)
     if args.cmd == "stats":
         return cmd_stats(cfg)
     return 2
