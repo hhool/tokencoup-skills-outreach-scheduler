@@ -215,6 +215,7 @@ score = w1×类别匹配(0/1)
 ```
 
 - 权重和阈值进 YAML，可按项目覆盖
+- **新鲜度加权（2026-11-18 拍板）**：新加入的 `page` 资产条目（如二期产品/游戏页）作为落地 URL 获得新鲜度加分，二期推广优先于整站条目；具体因子随 Phase 3 打分落地
 - 产出按 score 降序进入该项目「待确认队列」，人工勾选确认后才生成排期
 - 排期生成规则：按 daily_quota 从确认池依次填充未来日期
 
@@ -273,6 +274,12 @@ tags: [gaming, browser-games, english]
 daily_quota: 10
 channels: [form, email]
 templates: [dir-submit, outreach-mail]
+sender:                # 可选：按项目发件身份（多客户）
+  name: ""             # 不填 -> 共享运营邮箱（全局 smtp_env_file）
+  email: ""
+  smtp_env_file: ""    # 不填 -> 全局 report.smtp_env_file
+report:
+  email: ""            # 按项目的客户报告收件人；不填 -> 全局
 scoring:
   min_score: 0.55
   weights: {category: 0.35, geo: 0.15, wave: 0.20, dr: 0.15, via_competitors: 0.15}
@@ -288,7 +295,7 @@ start_date: 2026-11-20
 
 - **调度方式**：系统 cron 拉起 CLI（`scheduler run --date today`），无常驻进程、无外部工具链依赖——这是「独立运行」的关键选择
 - **wave1 表单直投**：HTTP 表单通道优先（requests + 表单规则）；需要真实浏览器的站点属 CUA 类，依赖本机 Chrome，**第一阶段不自动**，进人工队列（独立性 vs 自动化的取舍：HTTP 优先）
-- **wave2 邮件自动发**：SMTP 发送，复用 Gmail 应用密码（identity.py 的 env 模式），配额键=域名（R-530 口径）
+- **wave2 邮件自动发**：SMTP 发送，复用 Gmail 应用密码（identity.py 的 env 模式），配额键=域名（R-530 口径）；支持按项目发件身份（项目 YAML 的 `sender` 块，client-intake §5）——不填回落共享运营邮箱
 - **失败处理**：失败重试 ≤3 次（仅 5xx/网络类，4xx 不重试），重试耗尽转人工队列并在日报列出
 
 ### 7.1 验证码识别（追加需求，通道确认：CUA 免费优先）

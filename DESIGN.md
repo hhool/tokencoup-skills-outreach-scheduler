@@ -221,6 +221,7 @@ score = w1×category match (0/1)
 ```
 
 - Weights and threshold live in YAML, overridable per project
+- **Freshness boost (ratified 2026-11-18)**: newly added `page` asset entries (e.g. a phase-2 product/game page) get a recency bonus as landing URLs, so phase-2 promotions outrank whole-site ones; exact factor lands with Phase 3 scoring
 - Output enters the project's pending-confirmation queue sorted by score descending; scheduling is generated only after human selection
 - Schedule generation: fill future dates from the confirmed pool respecting daily_quota
 
@@ -280,6 +281,12 @@ tags: [gaming, browser-games, english]
 daily_quota: 10
 channels: [form, email]
 templates: [dir-submit, outreach-mail]
+sender:                # optional per-project sender identity (multi-client)
+  name: ""             # unset -> shared ops mailbox (global smtp_env_file)
+  email: ""
+  smtp_env_file: ""    # unset -> global report.smtp_env_file
+report:
+  email: ""            # per-project client-report recipient; unset -> global
 scoring:
   min_score: 0.55
   weights: {category: 0.35, geo: 0.15, wave: 0.20, dr: 0.15, via_competitors: 0.15}
@@ -295,7 +302,7 @@ start_date: 2026-11-20
 
 - **Scheduling**: system cron launches the CLI (`scheduler run --date today`); no resident process, no external-toolchain dependency — this is the key choice for "independent of the host environment"
 - **wave1 form submit**: HTTP form channel first (requests + form rules); sites requiring a real browser are CUA-class — dependent on local Chrome — and are **not automated in phase 1**; they go to the human queue (trade-off: HTTP first, independence over automation)
-- **wave2 email auto-send**: SMTP, reusing Gmail app passwords (identity.py env pattern); quota key = domain (R-530 convention)
+- **wave2 email auto-send**: SMTP, reusing Gmail app passwords (identity.py env pattern); quota key = domain (R-530 convention); per-project sender identity supported (`sender` block in project YAML, client-intake §5) — unset falls back to the shared ops mailbox
 - **Failure handling**: retries ≤3 (5xx/network only; 4xx never retried); exhausted retries go to the human queue and appear in the daily report
 
 ### 7.1 Captcha recognition (added requirement; channel ratified: CUA free first)

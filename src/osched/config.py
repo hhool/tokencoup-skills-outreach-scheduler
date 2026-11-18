@@ -68,6 +68,12 @@ def _validate(cfg: dict[str, Any], base_dir: str) -> None:
     captcha.setdefault("solver_api", "")
     captcha.setdefault("monthly_budget_usd", 0)
 
+    probe = cfg.setdefault("probe", {})
+    probe.setdefault("timeout_seconds", 12.0)
+    probe.setdefault("candidates_per_site", 3)
+    probe.setdefault("per_run_limit", 20)
+    probe.setdefault("audit_days", 30)      # §4c freshness audit interval
+
 
 def data_root(cfg: dict[str, Any]) -> pathlib.Path:
     """Resolved data root directory (created on demand)."""

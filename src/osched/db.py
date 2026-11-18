@@ -83,6 +83,26 @@ CREATE TABLE IF NOT EXISTS run_log (
   note    TEXT
 );
 
+-- Submit-path cache (DESIGN.md §4c): discovered submit endpoints are
+-- first-class assets — recorded once, reused across submissions, kept fresh.
+-- One canonical entry per domain (the best endpoint found so far).
+CREATE TABLE IF NOT EXISTS probe_cache (
+  id             INTEGER PRIMARY KEY AUTOINCREMENT,
+  domain         TEXT NOT NULL UNIQUE,
+  entry_url      TEXT NOT NULL,
+  form_signature TEXT,
+  captcha_type   TEXT,
+  contact_email  TEXT,
+  success_count  INTEGER NOT NULL DEFAULT 0,
+  last_probed    TEXT NOT NULL DEFAULT (datetime('now')),
+  last_verified  TEXT,
+  state          TEXT NOT NULL DEFAULT 'valid',
+  history_json   TEXT NOT NULL DEFAULT '[]'
+);
+
+CREATE INDEX IF NOT EXISTS idx_run_log_ts ON run_log(ts);
+CREATE INDEX IF NOT EXISTS idx_probe_cache_state ON probe_cache(state);
+
 CREATE INDEX IF NOT EXISTS idx_pool_domain ON pool(domain);
 CREATE INDEX IF NOT EXISTS idx_pool_status ON pool(status);
 CREATE INDEX IF NOT EXISTS idx_pool_probe ON pool(probe_state);
