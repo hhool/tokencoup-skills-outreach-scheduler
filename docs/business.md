@@ -208,3 +208,41 @@ what the invoice cites. Internal repo/codename (`outreach-scheduler`,
 
 Positioning formula in brand terms: **cheaper per live link than
 Respona-class SaaS, harder attestation than done-for-you agencies.**
+
+### Payments (ratified 2026-11-18)
+
+**Constraint: no Hong Kong entity, no overseas entity.** Stripe direct
+onboarding requires a HK/US/UK etc. registered entity, so the
+self-serve-Stripe route is **ruled out** until an entity exists.
+Competitor evidence: overseas 2B sellers (agency / done-for-you class)
+collect by invoice + bank transfer + Wise/Payoneer — no Stripe needed at
+our deal sizes; 2C self-serve (alternativeto/producthunt-style listings)
+uses Stripe because those buyers swipe a card at $20–50.
+
+The billing model (per delivered live link, no subscription, invoice-cited
+by the live-link ledger) fits manual B2B collection naturally — the
+ledger IS the invoice attachment.
+
+Matrix by phase and market:
+
+| phase | overseas clients | domestic clients |
+|-------|------------------|------------------|
+| now (manual) | invoice + bank transfer / Wise / Payoneer; quote in USD | 对公转账 + 增值税发票；quote in CNY (rate set at quote time) |
+| self-serve upgrade | **MoR: Paddle or Lemon Squeezy** — they become the merchant of record, handle tax/compliance, accept cards, pay out to a CN entity by wire/Payoneer. No HK/US entity needed on our side. | unchanged: 对公转账 stays (domestic 2B buyers expect it) |
+| only if an overseas entity appears later | may add Stripe Invoicing alongside MoR (not before) | unchanged |
+
+Decision rules:
+
+1. Package request (portal) → admin marks done → **offline payment**
+   (transfer/Wise/对公) → admin sets paid credits. This shipped loop is
+   the payment flow for the manual phase; no gateway integration needed.
+2. Do NOT integrate a payment gateway for the manual phase — the request
+   loop is already the contract; gateway adds PCI/subscription surface we
+   don't sell (no subscriptions).
+3. When self-serve checkout is justified by volume, pick ONE MoR
+   (Paddle preferred: stronger B2B invoicing + checkout localization;
+   Lemon Squeezy simpler but thinner invoice support). Productize only
+   the Starter tier; Growth/Scale stay quote-based (volume negotiation
+   is part of the price).
+4. Domestic and overseas never mix ledgers: separate quotes, separate
+   currencies, separate invoices.

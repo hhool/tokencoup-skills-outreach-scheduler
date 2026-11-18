@@ -362,7 +362,61 @@ live</em> — the live-link ledger is the attestation, and the attestation is
 what the invoice cites. Internal repo/codename (<code>outreach-scheduler</code>,
 <code>osched</code>) stays unchanged; the brand is the external face only.</p>
 <p>Positioning formula in brand terms: <strong>cheaper per live link than
-Respona-class SaaS, harder attestation than done-for-you agencies.</strong></p></div>
+Respona-class SaaS, harder attestation than done-for-you agencies.</strong></p>
+<h3>Payments (ratified 2026-11-18)</h3>
+<p><strong>Constraint: no Hong Kong entity, no overseas entity.</strong> Stripe direct
+onboarding requires a HK/US/UK etc. registered entity, so the
+self-serve-Stripe route is <strong>ruled out</strong> until an entity exists.
+Competitor evidence: overseas 2B sellers (agency / done-for-you class)
+collect by invoice + bank transfer + Wise/Payoneer — no Stripe needed at
+our deal sizes; 2C self-serve (alternativeto/producthunt-style listings)
+uses Stripe because those buyers swipe a card at $20–50.</p>
+<p>The billing model (per delivered live link, no subscription, invoice-cited
+by the live-link ledger) fits manual B2B collection naturally — the
+ledger IS the invoice attachment.</p>
+<p>Matrix by phase and market:</p>
+<table>
+<thead>
+<tr>
+<th>phase</th>
+<th>overseas clients</th>
+<th>domestic clients</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>now (manual)</td>
+<td>invoice + bank transfer / Wise / Payoneer; quote in USD</td>
+<td>对公转账 + 增值税发票；quote in CNY (rate set at quote time)</td>
+</tr>
+<tr>
+<td>self-serve upgrade</td>
+<td><strong>MoR: Paddle or Lemon Squeezy</strong> — they become the merchant of record, handle tax/compliance, accept cards, pay out to a CN entity by wire/Payoneer. No HK/US entity needed on our side.</td>
+<td>unchanged: 对公转账 stays (domestic 2B buyers expect it)</td>
+</tr>
+<tr>
+<td>only if an overseas entity appears later</td>
+<td>may add Stripe Invoicing alongside MoR (not before)</td>
+<td>unchanged</td>
+</tr>
+</tbody>
+</table>
+<p>Decision rules:</p>
+<ol>
+<li>Package request (portal) → admin marks done → <strong>offline payment</strong>
+   (transfer/Wise/对公) → admin sets paid credits. This shipped loop is
+   the payment flow for the manual phase; no gateway integration needed.</li>
+<li>Do NOT integrate a payment gateway for the manual phase — the request
+   loop is already the contract; gateway adds PCI/subscription surface we
+   don't sell (no subscriptions).</li>
+<li>When self-serve checkout is justified by volume, pick ONE MoR
+   (Paddle preferred: stronger B2B invoicing + checkout localization;
+   Lemon Squeezy simpler but thinner invoice support). Productize only
+   the Starter tier; Growth/Scale stay quote-based (volume negotiation
+   is part of the price).</li>
+<li>Domestic and overseas never mix ledgers: separate quotes, separate
+   currencies, separate invoices.</li>
+</ol></div>
 <div data-lang-en="0" style="display:none"><h1 style="display:none">业务层 — 商业化落地路线图</h1><h1>业务层 — 商业化落地路线图</h1>
 <p><strong>定位：业务层就是商业化落地轨道。</strong> 功能层（import → probe → match →
 execute → report）是「机器」；业务层是把机器变成可售卖、可交付、可续费
@@ -631,7 +685,55 @@ SLA（每日最低提交数）与不达标预警。</p>
 live</em>——实链台账就是出证，出证就是开票引用的凭证。内部仓库/代号
 （<code>outreach-scheduler</code>、<code>osched</code>）不变，品牌只做对外门面。</p>
 <p>用品牌语表述定位公式：<strong>比 Respona 级 SaaS 每实链更便宜，比代做
-服务商出证更硬。</strong></p></div></article></main>
+服务商出证更硬。</strong></p>
+<h3>支付（2026-11-18 定稿）</h3>
+<p><strong>约束：无香港主体，无海外主体。</strong> Stripe 直连入驻需要港/美/英等
+注册主体，所以在主体落地前，Stripe 自助收款路线<strong>排除</strong>。
+竞品证据：海外 2B 卖家（代做/服务商类）用 发票 + 银行转账 +
+Wise/Payoneer 收款——我们这个客单规模用不上 Stripe；2C 自助
+（alternativeto/producthunt 类上架）才走 Stripe，因为那类买家在
+$20–50 价位刷卡。</p>
+<p>计费模式（按交付实链计价、无订阅、由实链台账出证）天然适配人工
+2B 收款——台账本身就是发票附件。</p>
+<p>分阶段分市场矩阵：</p>
+<table>
+<thead>
+<tr>
+<th>阶段</th>
+<th>海外客户</th>
+<th>国内客户</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>现在（人工）</td>
+<td>发票 + 银行转账 / Wise / Payoneer；以 USD 报价</td>
+<td>对公转账 + 增值税发票；以 CNY 报价（报价时锁定汇率）</td>
+</tr>
+<tr>
+<td>自助化升级</td>
+<td><strong>MoR：Paddle 或 Lemon Squeezy</strong>——它们成为记录商户（merchant of record），承担税务/合规、收卡，以 wire/Payoneer 打款给国内主体。我方无需港/美主体。</td>
+<td>不变：对公转账保留（国内 2B 买家默认预期）</td>
+</tr>
+<tr>
+<td>仅当日后出现海外主体</td>
+<td>可在 MoR 之外加 Stripe Invoicing（此前不加）</td>
+<td>不变</td>
+</tr>
+</tbody>
+</table>
+<p>决策规则：</p>
+<ol>
+<li>套餐申请（门户）→ 管理员标记完成 → <strong>线下收款</strong>
+   （转账/Wise/对公）→ 管理员设置付费额度。已交付的闭环就是人工
+   阶段的支付流程，无需接网关。</li>
+<li>人工阶段<strong>不接支付网关</strong>——申请闭环本身就是契约；网关带来
+   PCI/订阅面，而我们不卖订阅。</li>
+<li>量起来需要自助结账时，只选一个 MoR（优先 Paddle：B2B 发票与
+   结账本地化更强；Lemon Squeezy 更简单但发票能力薄）。只把入门档
+   产品化；成长/规模档保持报价制（量级谈判本身就是价格的一部分）。</li>
+<li>国内与海外<strong>台账永不混用</strong>：分开报价、分开币种、分开开票。</li>
+</ol></div></article></main>
 <footer>bilingual docs · built from .md sources</footer>
 <script>
 (function(){
