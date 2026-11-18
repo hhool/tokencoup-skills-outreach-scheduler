@@ -45,6 +45,7 @@ from osched import scheduler as sched_mod
 from osched import executor as exec_mod
 from osched import report as report_mod
 from osched import cua as cua_mod
+from osched import verify as verify_mod
 
 PROJECT_YAML_TEMPLATE = """\
 # Project config for {domain} — lives under data_root/projects/ (gitignored).
@@ -334,6 +335,20 @@ def cmd_asset(cfg: dict, domain: str, kind: str, content: str) -> int:
     return 0
 
 
+def cmd_verify(cfg: dict, domain: str | None, days: int, limit: int) -> int:
+    conn = connect(data_root(cfg))
+    pid = None
+    if domain:
+        pid = _get_project(cfg, conn, domain)["_id"]
+    stats = verify_mod.run_verify(conn, pid, days_after=days, limit=limit)
+    print("verify: " + json.dumps({k: v for k, v in stats.items()
+                                   if k != "rows"}, ensure_ascii=False))
+    for r in stats.get("rows", []):
+        print(f"  plan_id={r['plan_id']:<5} {r['result']:<12} "
+              f"{r['domain']:<28} {r['note']}")
+    return 0
+
+
 def cmd_stats(cfg: dict) -> int:
     conn = connect(data_root(cfg))
     rows = conn.execute(
@@ -422,6 +437,12 @@ def main(argv: list[str] | None = None) -> int:
                          help="site-title | site-summary | contact-email | "
                               "category | sender-name")
     p_asset.add_argument("content")
+    p_verify = sub.add_parser("verify",
+                              help="re-visit submitted plans for live links (B1)")
+    p_verify.add_argument("--domain", default=None)
+    p_verify.add_argument("--days", type=int, default=3,
+                          help="verify plans executed >= N days ago")
+    p_verify.add_argument("--limit", type=int, default=0)
     sub.add_parser("stats", help="pool summary")
     args = ap.parse_args(argv)
 
@@ -458,6 +479,8 @@ def main(argv: list[str] | None = None) -> int:
         return cmd_cua(cfg, args.domain, args.headless, args.limit)
     if args.cmd == "asset":
         return cmd_asset(cfg, args.domain, args.kind, args.content)
+    if args.cmd == "verify":
+        return cmd_verify(cfg, args.domain, args.days, args.limit)
     if args.cmd == "stats":
         return cmd_stats(cfg)
     return 2

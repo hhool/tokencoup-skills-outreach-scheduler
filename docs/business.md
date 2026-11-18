@@ -106,6 +106,7 @@ role. Splitting into two mailboxes later is config-only.
 | item | status |
 |------|--------|
 | functional layer (import→report, cron, CUA) | shipped, pushed |
+| **B1 live-link ledger** (`verify` CLI, `link_verify` table, plan state `live`, in daily.sh run) | **shipped** |
 | OPR DR enrichment | pending IP binding decision (VPN exit, on hold) |
 | wave2 SMTP live send | ready; awaiting first wave2 plan |
 | real-site full run | pending queue has v3/v2 captcha candidates |

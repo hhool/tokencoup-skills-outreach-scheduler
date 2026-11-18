@@ -36,6 +36,7 @@ budget); a laptop on mobile broadband changes IPs and will need rebinding.
 |-----------|---------|
 | `queued` | scheduled, awaiting execution |
 | `submitted` / `sent` | wave1 / wave2 done |
+| `live` | verified live link on the directory page (B1 ledger) |
 | `cua` | needs the CUA browser channel (captcha class) |
 | `human` | needs a human (bot-blocked, no email, unknown captcha, 4xx) |
 | `failed` | retryable failure exhausted (5xx/network, max 3) |

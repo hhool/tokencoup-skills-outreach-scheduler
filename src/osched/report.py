@@ -91,8 +91,12 @@ def _sec_yesterday(conn, day: str) -> tuple[str, list[str]]:
         key = (r["pool_domain"], r["result_note"] or "")
         note_cache[key] = note_cache.get(key, 0) + 1
     ok = sum(1 for r in rows if r["state"] in ("submitted", "sent"))
+    live = conn.execute(
+        "SELECT COUNT(*) AS n FROM plan WHERE state='live'"
+    ).fetchone()["n"]
     bad = len(rows) - ok
-    lines.append(f"  completed: {ok}, failed/pending: {bad}")
+    lines.append(f"  completed: {ok}, failed/pending: {bad}, "
+                 f"live links total: {live}")
     for (dom, note), n in sorted(note_cache.items()):
         short = note if len(note) <= 60 else note[:57] + "..."
         lines.append(f"  [{n}x] {dom} — {short}")

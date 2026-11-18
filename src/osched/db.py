@@ -86,6 +86,19 @@ CREATE TABLE IF NOT EXISTS project_asset (
   UNIQUE(project_id, kind)
 );
 
+-- Live-link verification (business layer B1): submission != live link.
+-- Latest verdict per plan; full check history lives in run_log.
+CREATE TABLE IF NOT EXISTS link_verify (
+  id          INTEGER PRIMARY KEY AUTOINCREMENT,
+  plan_id     INTEGER NOT NULL REFERENCES plan(id),
+  checked_at  TEXT NOT NULL DEFAULT (datetime('now')),
+  result      TEXT NOT NULL,     -- live | missing | unreachable | bot-blocked
+  http_status INTEGER,
+  note        TEXT
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_link_verify_plan ON link_verify(plan_id);
+
 CREATE TABLE IF NOT EXISTS run_log (
   id      INTEGER PRIMARY KEY AUTOINCREMENT,
   ts      TEXT NOT NULL DEFAULT (datetime('now')),
