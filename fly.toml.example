@@ -8,6 +8,8 @@ primary_region = "hkg"                 # pick a region; note OPR IP binding!
 
 [env]
   OSCHED_DATA_ROOT = "/data"
+  OSCHED_CONFIG = "/data/config/global.yaml"   # config lives on the volume
+  PORTAL_BASE_URL = "https://<your-app>.fly.dev"  # verification-mail links
   TZ = "Asia/Shanghai"                # supercronic times follow TZ
 
 # one small VM is plenty (stdlib-only workload, ~no traffic)
@@ -20,5 +22,14 @@ primary_region = "hkg"                 # pick a region; note OPR IP binding!
   source = "osched_data"
   destination = "/data"
 
+# portal HTTP service + cron on the same machine (volume is single-attach)
+[http_service]
+  internal_port = 8080
+  force_https = true
+  auto_stop_machines = false     # cron must keep running
+  auto_start_machines = true
+  [http_service.concurrency]
+    type = "requests"
+
 [processes]
-  app = "supercronic /crontab"
+  app = "sh scripts/start.sh"

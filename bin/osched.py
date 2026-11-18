@@ -30,6 +30,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import sys
 
 sys.path.insert(0, "src")
@@ -50,6 +51,7 @@ from osched import ops as ops_mod
 from osched import report as report_mod
 from osched import cua as cua_mod
 from osched import verify as verify_mod
+from osched import portal as portal_mod
 
 PROJECT_YAML_TEMPLATE = """\
 # Project config for {domain} — lives under data_root/projects/ (gitignored).
@@ -573,6 +575,11 @@ def main(argv: list[str] | None = None) -> int:
                         help="show top N domains")
     sub.add_parser("overview", help="multi-client operations view (B5)")
     sub.add_parser("stats", help="pool summary")
+    p_portal = sub.add_parser("portal",
+                              help="client portal HTTP server (skeleton)")
+    p_portal.add_argument("--host", default="127.0.0.1")
+    p_portal.add_argument("--port", type=int,
+                          default=int(os.environ.get("PORTAL_PORT") or 8090))
     args = ap.parse_args(argv)
 
     cfg = load_config(args.config)
@@ -626,6 +633,8 @@ def main(argv: list[str] | None = None) -> int:
         return cmd_overview(cfg)
     if args.cmd == "stats":
         return cmd_stats(cfg)
+    if args.cmd == "portal":
+        return portal_mod.serve(cfg, data_root(cfg), args.host, args.port)
     return 2
 
 

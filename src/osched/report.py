@@ -247,18 +247,18 @@ def _require_any(env_file: str, *keys: str) -> str:
         f"Missing credential {' or '.join(keys)} (env or {env_file})")
 
 
-def send_report(cfg: dict, text: str, day: str) -> dict:
-    """Email the report. Recipient empty = skip (ratified: run_log only)."""
-    recipient = (cfg.get("report", {}).get("email") or "").strip()
-    if not recipient:
-        return {"sent": False, "reason": "no recipient configured"}
+def send_mail(cfg: dict, to_addr: str, subject: str, body: str,
+              from_label: str = "outreach-scheduler") -> None:
+    """Generic text mail over the report SMTP settings; raises on failure.
+
+    Used by the daily report, the client portal verification mail, and
+    any future B2/B3 mail paths — one credential source, one port rule.
+    """
     s = _smtp_settings(cfg)
-    from_addr = s["user"]
-    msg = MIMEText(text, "plain", "utf-8")
-    msg["Subject"] = Header(f"[outreach-scheduler] daily report {day}",
-                            "utf-8")
-    msg["From"] = formataddr(("outreach-scheduler", from_addr))
-    msg["To"] = recipient
+    msg = MIMEText(body, "plain", "utf-8")
+    msg["Subject"] = Header(subject, "utf-8")
+    msg["From"] = formataddr((from_label, s["user"]))
+    msg["To"] = to_addr
     msg["Date"] = formatdate(localtime=True)
     msg["Message-ID"] = make_msgid(domain=s["host"])
     with smtplib.SMTP_SSL(s["host"], s["port"], timeout=30) if s["ssl"] \
@@ -266,7 +266,16 @@ def send_report(cfg: dict, text: str, day: str) -> dict:
         if not s["ssl"]:
             smtp.starttls()
         smtp.login(s["user"], s["pass"])
-        smtp.sendmail(from_addr, [recipient], msg.as_string())
+        smtp.sendmail(s["user"], [to_addr], msg.as_string())
+
+
+def send_report(cfg: dict, text: str, day: str) -> dict:
+    """Email the report. Recipient empty = skip (ratified: run_log only)."""
+    recipient = (cfg.get("report", {}).get("email") or "").strip()
+    if not recipient:
+        return {"sent": False, "reason": "no recipient configured"}
+    send_mail(cfg, recipient, f"[outreach-scheduler] daily report {day}",
+              text)
     return {"sent": True, "recipient": recipient}
 
 
