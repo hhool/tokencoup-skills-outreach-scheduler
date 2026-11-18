@@ -13,7 +13,7 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 # supercronic: cron in the container (no system cron daemon needed)
 ARG SUPERCRONIC_VERSION=v0.2.30
-ARG SUPERCRONIC_SHA1=054cafefb4f5b38b2e6a44ad9ec6a2f9d5afe7d4
+ARG SUPERCRONIC_SHA1=9f27ad28c5c57cd133325b2a66bba69ba2235799
 RUN apt-get update \
  && apt-get install -y --no-install-recommends curl ca-certificates \
  && rm -rf /var/lib/apt/lists/* \
