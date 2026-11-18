@@ -110,6 +110,8 @@ role. Splitting into two mailboxes later is config-only.
 | **B2 client report** (`client-report` CLI, `client_report.py`, per-project `report.email`) | **shipped** — real send verified |
 | **B3 account lifecycle (phases 1-2: ledger + mail-verify + CUA activation click)** | **shipped** — real inbox verified, pending -> active end-to-end; phase 3 candidates: registration automation, aged-account reuse |
 | **B4 submittability profile** (`profile` CLI, `profile.py`) | **shipped** — failure-mix classification, per-domain recommendation (preferred/keep/bot-blocked/exclude); template attribution fills as wave2 data accumulates |
+| **B5 multi-client operations view** (`overview` CLI, `ops.py`, in daily.sh run+pipeline) | **shipped** — per-client stage counts, quota usage, idle/human-queue SLA alerts |
+| **B6 competitor supply refresh** (monthly `pipeline` cron pass) | **shipped** — idempotent pipeline auto-flows new competitor data to the confirmation queue; humans only confirm |
 | OPR DR enrichment | pending IP binding decision (VPN exit, on hold) |
 | wave2 SMTP live send | ready; awaiting first wave2 plan |
 | real-site full run | pending queue has v3/v2 captcha candidates |

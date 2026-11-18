@@ -94,6 +94,8 @@ WDC 竞品收割从手动导入升级为定时刷新：新目录自动入池 →
 | **B2 客户报告**（client-report CLI、client_report.py、项目级 report.email） | **已交付**——实发已验证 |
 | **B3 账号生命周期（一、二期：台账 + 收信 + CUA 激活点击）** | **已交付**——真实收件箱验证、pending→active 端到端；三期候选：注册自动化、老账号复用 |
 | **B4 可投递性画像**（profile CLI、profile.py） | **已交付**——失败归类、每域名处置建议（preferred/keep/bot-blocked/exclude）；模板归因随 wave2 数据积累自动出现 |
+| **B5 多客户运营视图**（overview CLI、ops.py、已接入 daily.sh run+pipeline） | **已交付**——每客户全阶段计数、配额占用、空闲/人工队列 SLA 告警 |
+| **B6 竞品供给刷新**（月度 pipeline cron） | **已交付**——幂等 pipeline 自动把新竞品数据流入待确认队列，人只做 confirm |
 | OPR DR 富化 | 待 IP 绑定决策（VPN 出口，暂挂） |
 | wave2 SMTP 实发 | 就绪；等第一条 wave2 计划 |
 | 真站全链路 | pending 队列有 v3/v2 验证码候选 |

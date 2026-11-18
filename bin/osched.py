@@ -46,6 +46,7 @@ from osched import executor as exec_mod
 from osched import client_report as client_report_mod
 from osched import accounts as accounts_mod
 from osched import profile as profile_mod
+from osched import ops as ops_mod
 from osched import report as report_mod
 from osched import cua as cua_mod
 from osched import verify as verify_mod
@@ -417,6 +418,19 @@ def cmd_verify(cfg: dict, domain: str | None, days: int, limit: int) -> int:
     return 0
 
 
+def cmd_overview(cfg: dict) -> int:
+    """B5 multi-client operations view: one row per project + SLA alerts."""
+    conn = connect(data_root(cfg))
+    projects = []
+    for r in conn.execute("SELECT domain FROM project ORDER BY domain"):
+        try:
+            projects.append(_get_project(cfg, conn, r["domain"]))
+        except Exception:
+            continue  # unregistered YAML — skip, don't block the view
+    print(ops_mod.render_overview(conn, projects))
+    return 0
+
+
 def cmd_profile(cfg: dict, domain: str | None, limit: int) -> int:
     conn = connect(data_root(cfg))
     pid = None
@@ -557,6 +571,7 @@ def main(argv: list[str] | None = None) -> int:
                         help="limit to one project")
     p_prof.add_argument("--limit", type=int, default=0,
                         help="show top N domains")
+    sub.add_parser("overview", help="multi-client operations view (B5)")
     sub.add_parser("stats", help="pool summary")
     args = ap.parse_args(argv)
 
@@ -607,6 +622,8 @@ def main(argv: list[str] | None = None) -> int:
                                     args.limit)
     if args.cmd == "profile":
         return cmd_profile(cfg, args.domain, args.limit)
+    if args.cmd == "overview":
+        return cmd_overview(cfg)
     if args.cmd == "stats":
         return cmd_stats(cfg)
     return 2

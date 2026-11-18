@@ -34,7 +34,7 @@ bin/osched.py            CLI: import / probe / project / match / queue /
                          confirm / reject / classify / dr / schedule / plan /
                          execute / cua / verify / report / client-report /
                          account / mail-verify / account-activate /
-                         profile / asset / stats
+                         profile / overview / asset / stats
 config/global.example.yaml   config template — copy to config/global.yaml
 src/osched/
   config.py              YAML config + env-file credentials, fail-fast
@@ -55,6 +55,7 @@ src/osched/
   client_report.py       client-facing periodic report (B2)
   accounts.py            directory account ledger + IMAP verification-mail fetch (B3)
   profile.py             per-domain submittability profile & suggestions (B4)
+  ops.py                 multi-client operations view + SLA alerts (B5)
 tools/private_scan.py    private-information pre-commit gate
 import/                  baseline WDC harvest code (copied as-is; see import/README.md)
 scripts/daily.sh         cron entry: pipeline & run segments

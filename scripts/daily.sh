@@ -9,6 +9,9 @@
 # Cron example (09:30 daily per config scheduler.run_at):
 #   30 9 * * * /path/to/outreach-scheduler/scripts/daily.sh run >> /tmp/osched.cron.log 2>&1
 #   0 9 * * 1 /path/to/outreach-scheduler/scripts/daily.sh pipeline >> /tmp/osched.cron.log 2>&1
+#   0 8 1 * * /path/to/outreach-scheduler/scripts/daily.sh pipeline >> /tmp/osched.cron.log 2>&1
+#     (first-of-month extra pass = B6 supply refresh; pipeline is idempotent,
+#      new competitor data auto-flows to the confirmation queue)
 #
 # 中文：cron 入口——pipeline=供给段（低频），run=执行段（每日 execute+report）。
 set -euo pipefail
@@ -50,6 +53,7 @@ case "$segment" in
       $PY bin/osched.py match "$p"
       $PY bin/osched.py schedule "$p"
     done
+    $PY bin/osched.py overview   # B5: ops snapshot after supply refresh
     echo "== pipeline done =="
     ;;
   run)
@@ -62,6 +66,7 @@ case "$segment" in
       $PY bin/osched.py cua "$p" --headless || true
     done
     $PY bin/osched.py report
+    $PY bin/osched.py overview   # B5: per-client ops view + SLA alerts
     echo "== daily run done =="
     ;;
   *)
