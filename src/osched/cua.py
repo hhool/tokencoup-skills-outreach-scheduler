@@ -46,8 +46,12 @@ CAPTCHA_IFRAMES = {
 }
 
 # Words that mark a success/confirmation page after submission.
+# Include French/German/Spanish — several directory targets (pcastuces, etc.)
+# confirm in their own language; English-only hints produced false `missing`.
 SUCCESS_HINTS = ("thank you", "successfully", "submitted", "received",
-                 "approved", "pending review", "已提交", "感谢")
+                 "approved", "pending review", "已提交", "感谢",
+                 "merci", "confirmation", "enregistr", "ajouté", "ajoute",
+                 "votre site a été", "danke", "gracias", "confirmación")
 
 REPEAT_FAIL_LIMIT = 3
 
@@ -92,15 +96,22 @@ def _fill_form(page, ctx: dict, entry_url: str) -> bool:
                 continue
             # Most-specific patterns first: a field named site_title must
             # not be captured by the url/site branch.
-            if any(k in name for k in ("title", "name", "author")):
-                handle.fill(ctx["title"][:200]); filled += 1
+            if any(k in name for k in ("title", "name", "author", "nom")):
+                # "Nom" (French) and "name" both carry the person's name.
+                # A domain used as sender_name looks automated — use the
+                # human name when configured, else a neutral site-derived
+                # label (never the bare domain).
+                who = (ctx.get("sender_name") or "").strip()
+                if not who or ("." in who and "@" not in who):
+                    who = ctx.get("site_name") or ctx["title"]
+                handle.fill(who[:200]); filled += 1
             elif any(k in name for k in ("desc", "summary", "comment",
-                                         "message", "text")):
+                                         "message", "text", "commentaire")):
                 handle.fill(ctx["description"][:500]); filled += 1
-            elif "mail" in name or "email" in name:
+            elif "mail" in name or "email" in name or "e-mail" in name:
                 if ctx.get("email"):
                     handle.fill(ctx["email"]); filled += 1
-            elif any(k in name for k in ("url", "link", "site")):
+            elif any(k in name for k in ("url", "link", "site", "web")):
                 handle.fill(ctx["url"]); filled += 1
         except Exception:
             continue
@@ -154,10 +165,16 @@ def _submit(page) -> bool:
     return False
 
 
+def _looks_successful_type(body: str) -> bool:
+    """Pure success-text check, shared with tests and the page wrapper."""
+    low = (body or "").lower()[:4000]
+    return any(h in low for h in SUCCESS_HINTS)
+
+
 def _looks_successful(page) -> bool:
     try:
-        body = page.inner_text("body", timeout=5000).lower()[:4000]
-        return any(h in body for h in SUCCESS_HINTS)
+        body = page.inner_text("body", timeout=5000)
+        return _looks_successful_type(body)
     except Exception:
         return False
 
@@ -187,9 +204,16 @@ def _execute_one(page, row, ctx: dict) -> dict:
 
     page.wait_for_timeout(2500)
     ok = _looks_successful(page)
-    return {"state": "submitted" if ok else "submitted",
+    end_url = page.url
+    # A 2xx form submit with no success copy still goes to `submitted` —
+    # verify is the authority on whether the link actually landed. But record
+    # the marker and landing URL honestly so a false success is diagnosable
+    # instead of silently trusted.
+    return {"state": "submitted",
             "note": ("success page detected" if ok
                      else "submitted (no success marker; verify manually)"),
+            "success_marker": bool(ok),
+            "landing_url": end_url,
             "captcha_action": action,
             "secs": round(time.time() - started, 1)}
 
