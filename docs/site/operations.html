@@ -119,6 +119,11 @@ wave-3 human queue. The curated ledger the SEO workbench keeps per site
 <td>§7.1 tiers; a stale cached captcha never routes a formless page to a browser</td>
 </tr>
 <tr>
+<td>cua_primary</td>
+<td><code>delivery: {cua_primary: true}</code> sends form plans to the browser channel</td>
+<td>window-1 evidence: both submittable static targets silently rejected the POST (re-rendered form; JS-populated hidden field + AJAX submit); the captcha gate stays above this switch</td>
+</tr>
+<tr>
 <td>verdict</td>
 <td>HTTP 2xx alone is never <code>submitted</code></td>
 <td>POST responses are scanned for success / failure / already-listed copy (scripts stripped) and for a re-rendered submit form; ambiguous 2xx goes to <code>human</code>, silent re-render goes to <code>human</code>, no signals at all trusts 2xx</td>
@@ -292,6 +297,11 @@ wordpress.com、reddit、tumblr。这些要「开户 + 发文」，不是表单�
 <td>验证码</td>
 <td>浏览器类 → <code>cua</code>；未知 → <code>human</code></td>
 <td>§7.1 分级；缓存的旧验证码不会把无表单页面送进浏览器</td>
+</tr>
+<tr>
+<td>CUA 优先</td>
+<td><code>delivery: {cua_primary: true}</code> 把 form 计划改走浏览器通道</td>
+<td>窗口 1 实证：两个可静态提交目标全部静默拒绝（表单重渲染；JS 填充隐藏字段 + AJAX 提交）；验证码闸门仍在此开关之上</td>
 </tr>
 <tr>
 <td>判定</td>

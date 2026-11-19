@@ -435,6 +435,36 @@ def cmd_evidence(cfg: dict, plan_id: int) -> int:
     return 0
 
 
+def cmd_alert_test(cfg: dict) -> int:
+    """Send one sample alert through the real SMTP path (ops mailbox).
+
+    Verifies credentials/TLS/recipient before a real link-drop ever needs
+    the channel. Not an outreach mail — goes to cfg.report.email only.
+    """
+    from osched import report
+    recipient = (cfg.get("report", {}).get("email") or "").strip()
+    if not recipient:
+        print("no report.email configured — nothing to test")
+        return 1
+    body = ("kind: link-drop (TEST — no real plan behind this alert)\n"
+            "project: (test)\nplacement: (test.example)\n"
+            "listing: https://test.example/listing\n"
+            "result: missing (http 200)\n"
+            "note: channel verification only — this is what a live link\n"
+            "      dropping out of the index would look like in your inbox.\n"
+            "receipt: (unavailable)\n")
+    try:
+        report.send_mail(cfg, recipient,
+                         "[linkattest] alert channel TEST: "
+                         "link-drop sample (no action needed)",
+                         body, from_label="linkattest-ops")
+    except Exception as e:  # noqa: BLE001 — surface the SMTP failure verbatim
+        print(f"send FAILED: {e}")
+        return 1
+    print(f"sent to {recipient} — check the inbox; alert chain verified")
+    return 0
+
+
 def cmd_evidence_shot(cfg: dict, plan_id: int, png_path: str) -> int:
     """Attach a listing-page screenshot to a plan's public receipt."""
     from osched.evidence import attach_shot, shot_url_for
@@ -578,6 +608,8 @@ def main(argv: list[str] | None = None) -> int:
                               help="attach a listing screenshot to a receipt")
     p_evshot.add_argument("plan_id", type=int)
     p_evshot.add_argument("png", help="path to a PNG file")
+    p_alert = sub.add_parser("alert-test",
+                             help="send a sample alert via real SMTP (ops)")
     p_crep = sub.add_parser("client-report",
                             help="client-facing periodic report (B2)")
     p_crep.add_argument("domain")
@@ -669,6 +701,8 @@ def main(argv: list[str] | None = None) -> int:
         return cmd_evidence(cfg, args.plan_id)
     if args.cmd == "evidence-shot":
         return cmd_evidence_shot(cfg, args.plan_id, args.png)
+    if args.cmd == "alert-test":
+        return cmd_alert_test(cfg)
     if args.cmd == "client-report":
         return cmd_client_report(cfg, args.domain, args.days, args.ref,
                                  args.dry_run)

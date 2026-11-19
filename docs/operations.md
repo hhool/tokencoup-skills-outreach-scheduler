@@ -37,6 +37,7 @@ Rules enforced by the importer (`src/osched/workbench.py`):
 | email | `channel=email` is manual unless `delivery: {email_auto: true}` | R-520: outreach mail is human-sent |
 | form | live page must expose a form with a URL-ish field | login / signup / search / newsletter boxes are not submission forms |
 | captcha | browser-class captcha -> `cua`; unknown -> `human` | §7.1 tiers; a stale cached captcha never routes a formless page to a browser |
+| cua_primary | `delivery: {cua_primary: true}` sends form plans to the browser channel | window-1 evidence: both submittable static targets silently rejected the POST (re-rendered form; JS-populated hidden field + AJAX submit); the captcha gate stays above this switch |
 | verdict | HTTP 2xx alone is never `submitted` | POST responses are scanned for success / failure / already-listed copy (scripts stripped) and for a re-rendered submit form; ambiguous 2xx goes to `human`, silent re-render goes to `human`, no signals at all trusts 2xx |
 
 ## Live-link alerts (evidence layer)

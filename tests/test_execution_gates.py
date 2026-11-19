@@ -257,3 +257,58 @@ def test_already_listed_is_submitted(monkeypatch):
     out = _run_exec_form(
         monkeypatch, "<p>That URL already exists in our directory.</p>")
     assert out["state"] == "submitted" and "already" in out["note"]
+
+
+# --------------------------------------------------------------------------
+# cua_primary: project-level opt-in routes form plans to the browser channel
+# --------------------------------------------------------------------------
+
+def test_cua_primary_routes_no_field_pages_to_cua(monkeypatch):
+    monkeypatch.setattr(executor, "_parse_live_form",
+                        lambda entry, timeout: ("https://dir.example", [],
+                                                "none", {}))
+    out = executor.exec_form(
+        None, {}, {"domain": "c.example", "delivery": {"cua_primary": True}},
+        _form_row(), {"url": "https://c.example/"}, dry_run=False)
+    assert out["state"] == "cua"
+    assert "JS-rendered" in out["note"]
+
+
+def test_cua_primary_routes_submittable_form_to_cua(monkeypatch):
+    monkeypatch.setattr(executor, "_parse_live_form",
+                        lambda entry, timeout:
+                        ("https://dir.example/add",
+                         ["site_url", "title"], "none", {}))
+    posted = []
+    monkeypatch.setattr(executor, "_post_form",
+                        lambda *a, **kw: posted.append(a) or (200, "", ""))
+    out = executor.exec_form(
+        None, {}, {"domain": "c.example", "delivery": {"cua_primary": True}},
+        _form_row(), {"url": "https://c.example/"}, dry_run=False)
+    assert out["state"] == "cua"
+    assert not posted                    # static POST never happened
+
+
+def test_without_cua_primary_static_post_still_runs(monkeypatch):
+    monkeypatch.setattr(executor, "_parse_live_form",
+                        lambda entry, timeout:
+                        ("https://dir.example/add",
+                         ["site_url", "title"], "none", {}))
+    posted = []
+    monkeypatch.setattr(executor, "_post_form",
+                        lambda *a, **kw: posted.append(a) or (200, "", ""))
+    out = executor.exec_form(
+        None, {}, {"domain": "c.example"},
+        _form_row(), {"url": "https://c.example/"}, dry_run=False)
+    assert out["state"] == "submitted" and len(posted) == 1
+
+
+def test_cua_primary_respects_unknown_captcha(monkeypatch):
+    monkeypatch.setattr(executor, "_parse_live_form",
+                        lambda entry, timeout:
+                        ("https://dir.example/add", ["site_url"],
+                         "some_weird_captcha", {}))
+    out = executor.exec_form(
+        None, {}, {"domain": "c.example", "delivery": {"cua_primary": True}},
+        _form_row(), {"url": "https://c.example/"}, dry_run=False)
+    assert out["state"] == "human"       # captcha gate stays above cua_primary

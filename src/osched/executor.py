@@ -58,6 +58,21 @@ def _email_auto(project: dict) -> bool:
     return bool((project.get("delivery") or {}).get("email_auto",
                                                     EMAIL_AUTO_DEFAULT))
 
+
+def _cua_primary(project: dict, cfg: dict) -> bool:
+    """Project-level opt-in: submit through the real browser by default.
+
+    Evidence from the first real window (2026-11-19): both submittable
+    static targets silently rejected the POST (one re-rendered form, one
+    JS-populated hidden field + AJAX submit). Static form POST only works
+    on server-rendered forms; a project that declares cua_primary sends
+    form plans to the CUA channel instead.
+    """
+    d = (project.get("delivery") or {})
+    if "cua_primary" in d:
+        return bool(d["cua_primary"])
+    return bool((cfg.get("delivery") or {}).get("cua_primary", False))
+
 USER_AGENT = probe_mod.USER_AGENT
 
 # Built-in generic templates (fallback when data_root/templates/<id>.txt is
@@ -250,6 +265,7 @@ def exec_form(conn, cfg: dict, project: dict, row, ctx: dict,
     entry = row["entry_url"] or row["url"]
 
     live_entry, fields, captcha, prefill = _parse_live_form(entry, timeout)
+    cua_primary = _cua_primary(project, cfg)
     if captcha == "bot-blocked":
         return {"state": "human", "note": "bot-blocked at pre-submit check"}
     if captcha == "unreachable":
@@ -260,6 +276,12 @@ def exec_form(conn, cfg: dict, project: dict, row, ctx: dict,
     # before captcha routing: a stale cached captcha must not send a browser
     # to a page that has no submission form at all.
     if not fields:
+        if cua_primary:
+            # JS-rendered forms are invisible to the static parser but real
+            # in a browser — exactly the failure class seen in window 1.
+            return {"state": "cua",
+                    "note": "cua_primary: no static form fields "
+                            "(likely JS-rendered) -> browser"}
         return {"state": "human",
                 "note": "no usable form fields at execution time"}
 
@@ -272,10 +294,18 @@ def exec_form(conn, cfg: dict, project: dict, row, ctx: dict,
 
     if dry_run:
         state_n = sum(1 for f in fields if f in prefill)
-        note = f"would POST {len(fields)} fields to {live_entry}"
+        if cua_primary:
+            note = f"would submit {len(fields)} fields via CUA browser at {live_entry}"
+        else:
+            note = f"would POST {len(fields)} fields to {live_entry}"
         if state_n:
             note += f" ({state_n} state field(s) echoed back)"
         return {"state": "dry-run", "note": note, "fields": fields}
+
+    if cua_primary:
+        return {"state": "cua",
+                "note": "cua_primary -> browser submission (static POST "
+                        "silently rejected in window 1)"}
 
     status, body, err = _post_form(live_entry, fields, ctx, timeout, prefill)
     if status in (200, 201, 202, 301, 302, 303, 307, 308):
