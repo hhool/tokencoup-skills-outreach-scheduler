@@ -16,6 +16,7 @@ Token permissions — verified against the live API, not assumed:
     WORKS  zones/<id>/dns_records            (read + write)   -> DNS Edit
     BLOCKED zones/<id>/email/routing         (the settings/enable endpoint)
     BLOCKED zones/<id>/email/routing/destinations
+    BLOCKED zones/<id>/email/routing/dns     (the DKIM record lives here)
     BLOCKED zones/<id>/email/routing/logs
     BLOCKED accounts/<id>/email/routing/addresses
 
@@ -31,16 +32,22 @@ Token permissions — verified against the live API, not assumed:
         script cannot publish it. Forwarded mail still arrives — CF signs
         outbound mail and Gmail falls back to SPF — but DKIM verification
         will not pass. Fix: enable Email Routing once in the dashboard, which
-        publishes the DKIM record, then re-run this script.
+        publishes the DKIM record, then re-run with --publish-dkim.
       * Destination addresses are account-level and this token cannot list
         or create them, so the forwarding target must already be verified
-        in the dashboard. If it is not, CF keeps the rule inactive even
-        though the API reports enabled=true.
+        in the dashboard. ``--probe-destination`` proves whether it is:
+        Cloudflare refuses to create a rule whose forward target is not a
+        verified destination (error 2054) and accepts the rule when the
+        address is verified, so a throwaway rule is a real check.
 
 Usage:
     CF_TOKEN=...  CF_ZONE_ID=...  CF_ZONE_NAME=linkattest.com \\
     CF_DESTINATION=you@example.com \\
     python3 tools/setup_email_routing.py [--dry-run]
+
+    python3 tools/setup_email_routing.py --check
+    python3 tools/setup_email_routing.py --probe-destination
+    python3 tools/setup_email_routing.py --publish-dkim
 
 The token is read from the environment, never from a file, and is never
 printed.
@@ -69,6 +76,11 @@ ROUTING_SPF = "v=spf1 include:_spf.mx.cloudflare.net ~all"
 # p=none on purpose: with no DKIM record published (see module docstring),
 # a strict policy would make forwarded mail fail DMARC and get filtered.
 ROUTING_DMARC = "v=DMARC1; p=none; rua=mailto:{local}@{zone}; fo=1"
+# Cloudflare publishes the DKIM public key under one of these selectors.
+DKIM_SELECTORS = ("cf2024-1._domainkey", "cf2024-2._domainkey", "_domainkey")
+
+# Cloudflare's error code for "that address is not a verified destination".
+UNVERIFIED_DESTINATION_CODE = 2054
 
 
 class CF:
@@ -125,6 +137,19 @@ def dns_records(cf: CF) -> list[dict]:
     return out.get("result") or []
 
 
+def _err(res: dict) -> str:
+    errs = res.get("errors") or [{}]
+    return f"{errs[0].get('code')} {errs[0].get('message')}"
+
+
+def _err_code(res: dict) -> int | None:
+    errs = res.get("errors") or []
+    if not errs:
+        return None
+    code = errs[0].get("code")
+    return code if isinstance(code, int) else None
+
+
 def ensure_txt(cf: CF, name: str, content: str, dry_run: bool) -> bool:
     """Create a TXT record unless an identical one already exists."""
     for r in dns_records(cf):
@@ -164,11 +189,6 @@ def ensure_mx(cf: CF, name: str, dry_run: bool) -> bool:
             print(f"  ! MX {name} -> {host} failed: {_err(res)}")
             ok = False
     return ok
-
-
-def _err(res: dict) -> str:
-    errs = res.get("errors") or [{}]
-    return f"{errs[0].get('code')} {errs[0].get('message')}"
 
 
 def ensure_rule(cf: CF, address: str, destination: str, dry_run: bool) -> bool:
@@ -219,11 +239,192 @@ def ensure_rule(cf: CF, address: str, destination: str, dry_run: bool) -> bool:
     return False
 
 
+# --------------------------------------------------------------------------
+# Audit: what is actually in place, read-only
+# --------------------------------------------------------------------------
+
+def find_rule(cf: CF, address: str) -> dict | None:
+    """The routing rule whose literal matcher targets `address`."""
+    res = cf.get(f"/zones/{cf.zone_id}/email/routing/rules?per_page=100")
+    for rule in res.get("result") or []:
+        for m in rule.get("matchers") or []:
+            if m.get("type") == "literal" and m.get("value") == address:
+                return rule
+    return None
+
+
+def audit(cf: CF, zone_name: str, address: str) -> dict:
+    """Read-only audit of the mail setup. Writes nothing, creates nothing."""
+    records = dns_records(cf)
+    mx = sorted({r["content"] for r in records
+                 if r["type"] == "MX" and r["name"] == zone_name})
+    spf = [r["content"] for r in records
+           if r["type"] == "TXT" and r["name"] == zone_name
+           and r["content"].startswith("v=spf1")]
+    dmarc = [r["content"] for r in records
+             if r["type"] == "TXT" and r["name"] == f"_dmarc.{zone_name}"]
+    dkim = [r for r in records
+            if "_domainkey" in r["name"] and r["type"] in ("TXT", "CNAME")]
+
+    rule = find_rule(cf, address)
+    destination = None
+    if rule:
+        for a in rule.get("actions") or []:
+            if a.get("type") == "forward":
+                destination = (a.get("value") or [None])[0]
+
+    missing_mx = [h for h, _ in ROUTING_MX if h not in mx]
+    problems: list[str] = []
+    if missing_mx:
+        problems.append(f"missing MX: {', '.join(missing_mx)}")
+    if not spf:
+        problems.append("missing SPF TXT on the apex")
+    if not dmarc:
+        problems.append("missing DMARC TXT")
+    if not dkim:
+        problems.append("DKIM record not published (deliverability, not delivery)")
+    if rule is None:
+        problems.append(f"no routing rule for {address}")
+    elif not rule.get("enabled"):
+        problems.append(f"routing rule for {address} is disabled")
+    if rule is not None and destination is None:
+        problems.append(f"routing rule for {address} does not forward anywhere")
+
+    return {
+        "zone": zone_name,
+        "address": address,
+        "mx": mx,
+        "spf": spf[0] if spf else None,
+        "dmarc": dmarc[0] if dmarc else None,
+        "dkim": [r["name"] for r in dkim],
+        "rule": {
+            "id": rule.get("id") if rule else None,
+            "enabled": rule.get("enabled") if rule else None,
+            "destination": destination,
+        },
+        "problems": problems,
+        "ok": not problems,
+    }
+
+
+def print_audit(report: dict) -> None:
+    """Human-readable rendering of `audit()` output."""
+    ok = report["ok"]
+    print(f"zone       : {report['zone']}")
+    print(f"address    : {report['address']}")
+    print(f"MX         : {', '.join(report['mx']) or '(none)'}")
+    print(f"SPF        : {report['spf'] or '(missing)'}")
+    print(f"DMARC      : {report['dmarc'] or '(missing)'}")
+    print(f"DKIM       : {', '.join(report['dkim']) or '(not published)'}")
+    rule = report["rule"]
+    if rule["id"]:
+        print(f"rule       : {rule['id']} enabled={rule['enabled']} "
+              f"-> {rule['destination']}")
+    else:
+        print("rule       : (missing)")
+    print()
+    if ok:
+        print("verdict    : mail routing is configured end to end.")
+    else:
+        print("verdict    : gaps found")
+        for p in report["problems"]:
+            print(f"            - {p}")
+    if not report["dkim"]:
+        print()
+        print("To publish DKIM (one dashboard click):")
+        print("  1. Cloudflare dashboard -> Compute -> Email Service ->")
+        print("     Email Routing -> linkattest.com -> enable Email Routing.")
+        print("  2. CF publishes cf2024-1._domainkey as a TXT record.")
+        print("  3. Re-run: python3 tools/setup_email_routing.py --publish-dkim")
+
+
+def probe_destination(cf: CF, zone_name: str, destination: str) -> bool:
+    """True when Cloudflare treats `destination` as a verified destination.
+
+    Cloudflare rejects a rule whose forward target is not a verified
+    destination address (error 2054) and accepts the rule when the address
+    is verified. A throwaway rule is therefore a real check, and it is
+    deleted immediately afterwards.
+    """
+    probe = f"routing-probe@{zone_name}"
+    body = {
+        "name": probe,
+        "enabled": True,
+        "matchers": [{"type": "literal", "field": "to", "value": probe}],
+        "actions": [{"type": "forward", "value": [destination]}],
+    }
+    res = cf.post(f"/zones/{cf.zone_id}/email/routing/rules", body)
+    if _err_code(res) == UNVERIFIED_DESTINATION_CODE:
+        print(f"destination {destination}: NOT verified "
+              f"(Cloudflare error {UNVERIFIED_DESTINATION_CODE})")
+        return False
+    if not res.get("success"):
+        print(f"destination {destination}: probe failed — {_err(res)}")
+        return False
+    rule_id = (res.get("result") or {}).get("id")
+    cf.delete(f"/zones/{cf.zone_id}/email/routing/rules/{rule_id}")
+    print(f"destination {destination}: verified "
+          f"(Cloudflare accepted a rule targeting it; probe rule removed)")
+    return True
+
+
+def publish_dkim(cf: CF, zone_name: str) -> bool:
+    """Publish the DKIM record Cloudflare generates for routed mail.
+
+    The record comes from /email/routing/dns, which needs a permission this
+    token does not have. When that endpoint is blocked the function says so
+    and prints the dashboard steps instead of guessing a key.
+    """
+    res = cf.get(f"/zones/{cf.zone_id}/email/routing/dns")
+    if not res.get("success"):
+        print(f"cannot read Cloudflare's email routing DNS: {_err(res)}")
+        print("This endpoint needs 'Email Routing Addresses Edit'.")
+        print("Enable Email Routing once in the dashboard (Compute > Email")
+        print("Service > Email Routing > <zone> > Enable), which publishes")
+        print("the DKIM record, then re-run with --publish-dkim.")
+        return False
+
+    payload = res.get("result") or {}
+    records = payload.get("records") if isinstance(payload, dict) else payload
+    wanted = [r for r in (records or [])
+              if isinstance(r, dict) and "._domainkey" in (r.get("name") or "")]
+    if not wanted:
+        print("Cloudflare returned no DKIM record for this zone yet.")
+        print("Enable Email Routing in the dashboard first, then re-run.")
+        return False
+
+    existing = {r["name"] for r in dns_records(cf) if r["type"] == "TXT"}
+    ok = True
+    for rec in wanted:
+        name = rec.get("name")
+        content = rec.get("content")
+        if not name or not content:
+            continue
+        if name in existing:
+            print(f"  = TXT {name} (already present)")
+            continue
+        created = cf.post(f"/zones/{cf.zone_id}/dns_records",
+                          {"type": "TXT", "name": name, "content": content})
+        if created.get("success"):
+            print(f"  + TXT {name} published")
+        else:
+            print(f"  ! TXT {name} failed: {_err(created)}")
+            ok = False
+    return ok
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(
         description="Set up Cloudflare Email Routing for a public address.")
     ap.add_argument("--dry-run", action="store_true",
                     help="print what would change, touch nothing")
+    ap.add_argument("--check", action="store_true",
+                    help="read-only audit of the current mail setup")
+    ap.add_argument("--probe-destination", action="store_true",
+                    help="prove whether the forward target is a verified "
+                         "destination (creates and removes a throwaway rule)")
+    ap.add_argument("--publish-dkim", action="store_true",
+                    help="publish the DKIM record Cloudflare generated")
     ap.add_argument("--zone-id", default=os.environ.get("CF_ZONE_ID", ""))
     ap.add_argument("--zone-name", default=os.environ.get("CF_ZONE_NAME", ""))
     ap.add_argument("--destination", default=os.environ.get("CF_DESTINATION", ""))
@@ -238,13 +439,33 @@ def main() -> int:
     if not args.zone_id or not args.zone_name:
         print("CF_ZONE_ID and CF_ZONE_NAME are required", file=sys.stderr)
         return 2
+
+    address = args.address or f"privacy@{args.zone_name}"
+    cf = CF(token, args.zone_id)
+
+    if args.check:
+        print_audit(audit(cf, args.zone_name, address))
+        return 0
+
+    if args.probe_destination:
+        destination = args.destination
+        if not destination:
+            rule = find_rule(cf, address)
+            for a in (rule or {}).get("actions") or []:
+                if a.get("type") == "forward":
+                    destination = (a.get("value") or [None])[0]
+        if not destination:
+            print("no destination known; pass --destination", file=sys.stderr)
+            return 2
+        return 0 if probe_destination(cf, args.zone_name, destination) else 1
+
+    if args.publish_dkim:
+        return 0 if publish_dkim(cf, args.zone_name) else 1
+
     if not args.destination:
         print("CF_DESTINATION is required (the verified mailbox to forward to)",
               file=sys.stderr)
         return 2
-
-    address = args.address or f"privacy@{args.zone_name}"
-    cf = CF(token, args.zone_id)
 
     print(f"zone      : {args.zone_name} ({args.zone_id})")
     print(f"address   : {address}")

@@ -381,7 +381,35 @@ Token permissions, verified against the live API rather than assumed:
 | `zones/<id>/dns_records` | **works** (read + write) | DNS Edit |
 | `zones/<id>/email/routing` (settings/enable) | blocked | zone settings write |
 | `zones/<id>/email/routing/destinations` | blocked | Email Routing Addresses Edit |
+| `zones/<id>/email/routing/dns` (holds the DKIM record) | blocked | Email Routing Addresses Edit |
 | `accounts/<id>/email/routing/addresses` | blocked | Email Routing Addresses Edit |
+
+### State of the live zone (checked 2026-11-20)
+
+| item | state |
+|---|---|
+| MX ×3 (`route1/2/3.mx.cloudflare.net`) | present |
+| SPF TXT (`include:_spf.mx.cloudflare.net ~all`) | present |
+| DMARC TXT (`p=none`) | present |
+| rule `privacy@linkattest.com` → operator mailbox | present, enabled, literal matcher |
+| forward target | **verified** — Cloudflare accepted a rule targeting it |
+| external mail to `privacy@linkattest.com` | accepted by Cloudflare's MX |
+| DKIM (`cf2024-1._domainkey`) | **not published** |
+
+Two read-only commands re-check all of that without writing anything:
+
+```bash
+python3 tools/setup_email_routing.py --check          # audit DNS + rule
+python3 tools/setup_email_routing.py --probe-destination  # is the target verified?
+```
+
+`--probe-destination` works because Cloudflare refuses to create a rule
+whose forward target is not a verified destination (error `2054`) and
+accepts the rule when the address is verified. The script creates a
+throwaway rule and deletes it again; two probe addresses came back `2054`
+while the operator's mailbox came back accepted, which is how the
+"destination must be verified" caveat below turned out to be already
+satisfied.
 
 Two consequences of the blocked endpoints:
 
@@ -389,16 +417,19 @@ Two consequences of the blocked endpoints:
    `cf2024-1._domainkey.<zone>` during dashboard onboarding; the endpoint
    that returns it is blocked. Forwarded mail still arrives — CF signs
    outbound mail and Gmail falls back to SPF — but DKIM verification will
-   not pass. The DMARC record this script writes is therefore `p=none`, so
-   a forwarded email that fails DKIM does not also fail a strict DMARC
-   policy and get filtered. To fix properly: enable Email Routing once in
-   the dashboard (Compute > Email Service > Email Routing), which publishes
-   the DKIM record, then re-run the script.
+   not pass, which costs a little inbox trust. The DMARC record this
+   script writes is therefore `p=none`, so a forwarded email that fails
+   DKIM does not also fail a strict DMARC policy and get filtered. To fix
+   properly: enable Email Routing once in the dashboard (Compute > Email
+   Service > Email Routing > linkattest.com), which publishes the DKIM
+   record, then re-run the script with `--publish-dkim` and it writes the
+   record itself.
 2. **The destination must already be verified.** Destination addresses are
    account-level and this token cannot list or create them. Until the
    mailbox confirms the Cloudflare verification email, CF keeps the rule
    inactive and drops the mail — the API still reports `enabled=true`, so
-   do not trust that field alone.
+   do not trust that field alone. `--probe-destination` is the check for
+   it.
 
 Also worth knowing: `PATCH` on a rule id is rejected with "Authentication
 error" by the same token that may `POST` and `PUT` rules. The script uses

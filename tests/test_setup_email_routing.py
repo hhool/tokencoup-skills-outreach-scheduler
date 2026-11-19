@@ -22,21 +22,29 @@ class FakeCF:
 
     zone_id = "zone-1"
 
-    def __init__(self, records=None, rules=None):
+    def __init__(self, records=None, rules=None, dns_payload=None,
+                 post_result=None):
         self.records = list(records or [])
         self.rules = list(rules or [])
+        self.dns_payload = dns_payload
+        self.post_result = post_result
         self.written_records = []
         self.written_rules = []
         self.updated_rules = []
+        self.deleted = []
 
     def get(self, path):
         if path.endswith("/dns_records?per_page=200"):
             return {"success": True, "result": self.records}
         if "/email/routing/rules" in path:
             return {"success": True, "result": self.rules}
+        if path.endswith("/email/routing/dns"):
+            return {"success": True, "result": self.dns_payload}
         return {"success": True, "result": []}
 
     def post(self, path, body):
+        if self.post_result is not None:
+            return self.post_result
         if "dns_records" in path:
             self.written_records.append(body)
             self.records.append(dict(body, id="new"))
@@ -53,6 +61,7 @@ class FakeCF:
         return {"success": True, "result": dict(body, id="rule-1")}
 
     def delete(self, path):
+        self.deleted.append(path)
         return {"success": True, "result": {}}
 
 
@@ -194,3 +203,103 @@ def test_no_token_value_in_script_source():
         assert built not in src
     private_service = "".join(chr(c) for c in (115, 101, 120, 116, 97, 110, 116))
     assert private_service not in src
+
+
+# --- audit / probe / dkim -------------------------------------------------
+
+def _full_setup():
+    """A zone that has everything the audit looks for."""
+    records = [_mx("linkattest.com", h, p) for h, p in ser.ROUTING_MX]
+    records.append(_txt("linkattest.com", ser.ROUTING_SPF))
+    records.append(_txt("_dmarc.linkattest.com", ser.ROUTING_DMARC))
+    records.append(_txt("cf2024-1._domainkey.linkattest.com", "v=DKIM1; k=rsa; p=x"))
+    rules = [{
+        "id": "rule-1",
+        "name": "privacy@linkattest.com",
+        "enabled": True,
+        "matchers": [{"type": "literal", "field": "to",
+                      "value": "privacy@linkattest.com"}],
+        "actions": [{"type": "forward", "value": ["someone@example.com"]}],
+    }]
+    return FakeCF(records=records, rules=rules)
+
+
+def test_audit_passes_when_everything_is_present():
+    report = ser.audit(_full_setup(), "linkattest.com", "privacy@linkattest.com")
+    assert report["ok"] is True
+    assert report["problems"] == []
+    assert report["rule"]["destination"] == "someone@example.com"
+    assert report["dkim"]
+
+
+def test_audit_names_the_missing_pieces():
+    cf = FakeCF(records=[], rules=[])
+    report = ser.audit(cf, "linkattest.com", "privacy@linkattest.com")
+    assert report["ok"] is False
+    joined = " ".join(report["problems"])
+    assert "missing MX" in joined
+    assert "missing SPF" in joined
+    assert "missing DMARC" in joined
+    assert "no routing rule" in joined
+
+
+def test_audit_flags_a_disabled_rule():
+    cf = _full_setup()
+    cf.rules[0]["enabled"] = False
+    report = ser.audit(cf, "linkattest.com", "privacy@linkattest.com")
+    assert report["ok"] is False
+    assert any("disabled" in p for p in report["problems"])
+
+
+def test_audit_does_not_write_anything():
+    cf = _full_setup()
+    ser.audit(cf, "linkattest.com", "privacy@linkattest.com")
+    assert cf.written_records == []
+    assert cf.written_rules == []
+    assert cf.updated_rules == []
+    assert cf.deleted == []
+
+
+def test_probe_reports_unverified_destination():
+    """Cloudflare error 2054 means the target is not a verified destination."""
+    cf = FakeCF(post_result={"success": False,
+                              "errors": [{"code": ser.UNVERIFIED_DESTINATION_CODE,
+                                          "message": "Destination address is not verified"}]})
+    assert ser.probe_destination(cf, "linkattest.com",
+                                 "someone@example.com") is False
+    # Nothing was created, so nothing has to be cleaned up.
+    assert cf.deleted == []
+
+
+def test_probe_removes_the_throwaway_rule():
+    cf = FakeCF(rules=[])
+    assert ser.probe_destination(cf, "linkattest.com",
+                                 "someone@example.com") is True
+    assert len(cf.written_rules) == 1
+    probe = cf.written_rules[0]
+    assert probe["matchers"][0]["value"] == "routing-probe@linkattest.com"
+    assert probe["actions"] == [
+        {"type": "forward", "value": ["someone@example.com"]}]
+    assert len(cf.deleted) == 1
+    assert cf.deleted[0].endswith("/rule-1")
+
+
+def test_publish_dkim_creates_the_record_it_is_given():
+    cf = FakeCF(records=[], dns_payload={"records": [
+        {"type": "TXT", "name": "cf2024-1._domainkey.linkattest.com",
+         "content": "v=DKIM1; k=rsa; p=abc"}]})
+    assert ser.publish_dkim(cf, "linkattest.com") is True
+    assert len(cf.written_records) == 1
+    assert cf.written_records[0]["name"] == "cf2024-1._domainkey.linkattest.com"
+
+
+def test_publish_dkim_reports_a_blocked_endpoint_instead_of_guessing():
+    cf = FakeCF(post_result={"success": False,
+                              "errors": [{"code": 10000,
+                                          "message": "Authentication error"}]})
+    # The dns endpoint is not the rules endpoint, so answer it directly.
+    cf.get = lambda path: {"success": False,
+                           "errors": [{"code": 10000,
+                                       "message": "Authentication error"}]}
+    assert ser.publish_dkim(cf, "linkattest.com") is False
+    assert cf.written_records == []

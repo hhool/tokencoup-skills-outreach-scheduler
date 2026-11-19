@@ -549,28 +549,86 @@ python3 tools/setup_email_routing.py --dry-run
 <td>Email Routing Addresses Edit</td>
 </tr>
 <tr>
+<td><code>zones/&lt;id&gt;/email/routing/dns</code> (holds the DKIM record)</td>
+<td>blocked</td>
+<td>Email Routing Addresses Edit</td>
+</tr>
+<tr>
 <td><code>accounts/&lt;id&gt;/email/routing/addresses</code></td>
 <td>blocked</td>
 <td>Email Routing Addresses Edit</td>
 </tr>
 </tbody>
 </table>
+<h3>State of the live zone (checked 2026-11-20)</h3>
+<table>
+<thead>
+<tr>
+<th>item</th>
+<th>state</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>MX ×3 (<code>route1/2/3.mx.cloudflare.net</code>)</td>
+<td>present</td>
+</tr>
+<tr>
+<td>SPF TXT (<code>include:_spf.mx.cloudflare.net ~all</code>)</td>
+<td>present</td>
+</tr>
+<tr>
+<td>DMARC TXT (<code>p=none</code>)</td>
+<td>present</td>
+</tr>
+<tr>
+<td>rule <code>privacy@linkattest.com</code> → operator mailbox</td>
+<td>present, enabled, literal matcher</td>
+</tr>
+<tr>
+<td>forward target</td>
+<td><strong>verified</strong> — Cloudflare accepted a rule targeting it</td>
+</tr>
+<tr>
+<td>external mail to <code>privacy@linkattest.com</code></td>
+<td>accepted by Cloudflare's MX</td>
+</tr>
+<tr>
+<td>DKIM (<code>cf2024-1._domainkey</code>)</td>
+<td><strong>not published</strong></td>
+</tr>
+</tbody>
+</table>
+<p>Two read-only commands re-check all of that without writing anything:</p>
+<pre><code class="language-bash">python3 tools/setup_email_routing.py --check          # audit DNS + rule
+python3 tools/setup_email_routing.py --probe-destination  # is the target verified?
+</code></pre>
+<p><code>--probe-destination</code> works because Cloudflare refuses to create a rule
+whose forward target is not a verified destination (error <code>2054</code>) and
+accepts the rule when the address is verified. The script creates a
+throwaway rule and deletes it again; two probe addresses came back <code>2054</code>
+while the operator's mailbox came back accepted, which is how the
+"destination must be verified" caveat below turned out to be already
+satisfied.</p>
 <p>Two consequences of the blocked endpoints:</p>
 <ol>
 <li><strong>The DKIM record is not published.</strong> CF normally generates
    <code>cf2024-1._domainkey.&lt;zone&gt;</code> during dashboard onboarding; the endpoint
    that returns it is blocked. Forwarded mail still arrives — CF signs
    outbound mail and Gmail falls back to SPF — but DKIM verification will
-   not pass. The DMARC record this script writes is therefore <code>p=none</code>, so
-   a forwarded email that fails DKIM does not also fail a strict DMARC
-   policy and get filtered. To fix properly: enable Email Routing once in
-   the dashboard (Compute &gt; Email Service &gt; Email Routing), which publishes
-   the DKIM record, then re-run the script.</li>
+   not pass, which costs a little inbox trust. The DMARC record this
+   script writes is therefore <code>p=none</code>, so a forwarded email that fails
+   DKIM does not also fail a strict DMARC policy and get filtered. To fix
+   properly: enable Email Routing once in the dashboard (Compute &gt; Email
+   Service &gt; Email Routing &gt; linkattest.com), which publishes the DKIM
+   record, then re-run the script with <code>--publish-dkim</code> and it writes the
+   record itself.</li>
 <li><strong>The destination must already be verified.</strong> Destination addresses are
    account-level and this token cannot list or create them. Until the
    mailbox confirms the Cloudflare verification email, CF keeps the rule
    inactive and drops the mail — the API still reports <code>enabled=true</code>, so
-   do not trust that field alone.</li>
+   do not trust that field alone. <code>--probe-destination</code> is the check for
+   it.</li>
 </ol>
 <p>Also worth knowing: <code>PATCH</code> on a rule id is rejected with "Authentication
 error" by the same token that may <code>POST</code> and <code>PUT</code> rules. The script uses
@@ -1025,24 +1083,77 @@ python3 tools/setup_email_routing.py --dry-run
 <td>Email Routing Addresses Edit</td>
 </tr>
 <tr>
+<td><code>zones/&lt;id&gt;/email/routing/dns</code>（DKIM 记录在这里）</td>
+<td>被拒</td>
+<td>Email Routing Addresses Edit</td>
+</tr>
+<tr>
 <td><code>accounts/&lt;id&gt;/email/routing/addresses</code></td>
 <td>被拒</td>
 <td>Email Routing Addresses Edit</td>
 </tr>
 </tbody>
 </table>
+<h3>线上区域现状（2026-11-20 实测）</h3>
+<table>
+<thead>
+<tr>
+<th>项</th>
+<th>状态</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>MX ×3（<code>route1/2/3.mx.cloudflare.net</code>）</td>
+<td>已在</td>
+</tr>
+<tr>
+<td>SPF TXT（<code>include:_spf.mx.cloudflare.net ~all</code>）</td>
+<td>已在</td>
+</tr>
+<tr>
+<td>DMARC TXT（<code>p=none</code>）</td>
+<td>已在</td>
+</tr>
+<tr>
+<td>规则 <code>privacy@linkattest.com</code> → 运维邮箱</td>
+<td>已在、已启用、literal 匹配</td>
+</tr>
+<tr>
+<td>转发目标地址</td>
+<td><strong>已验证</strong>——CF 接受了指向它的规则</td>
+</tr>
+<tr>
+<td>外部发往 <code>privacy@linkattest.com</code> 的邮件</td>
+<td>CF 的 MX 已接收</td>
+</tr>
+<tr>
+<td>DKIM（<code>cf2024-1._domainkey</code>）</td>
+<td><strong>未发布</strong></td>
+</tr>
+</tbody>
+</table>
+<p>两条只读命令可以随时复查上面每一项，不写任何东西：</p>
+<pre><code class="language-bash">python3 tools/setup_email_routing.py --check             # 审计 DNS + 规则
+python3 tools/setup_email_routing.py --probe-destination # 目标地址验证了吗
+</code></pre>
+<p><code>--probe-destination</code> 能用，是因为 CF 会拒绝创建"目标地址未验证"的规则
+（错误码 <code>2054</code>），而地址已验证时它会接受。脚本建一条临时规则、验完立刻
+删掉：两个探测地址都回了 <code>2054</code>，运维邮箱被接受——下面"目标地址必须验证过"
+那条警告因此已经确认不成立。</p>
 <p>被拒端点带来两个后果：</p>
 <ol>
 <li><strong>DKIM 记录没有发布。</strong> CF 通常在面板启用时生成
    <code>cf2024-1._domainkey.&lt;zone&gt;</code>，而返回它的端点被拒。转发邮件仍能送达
-   ——CF 会给外发邮件签名，Gmail 会退回 SPF 判定——但 DKIM 校验不会通过。
-   所以脚本写的 DMARC 是 <code>p=none</code>：这样"DKIM 失败"不会连带"DMARC 严格
-   策略失败"，不会被拦进垃圾箱。要彻底修好：在面板里启用一次 Email
-   Routing（Compute &gt; Email Service &gt; Email Routing），CF 会补上 DKIM
-   记录，然后重跑脚本。</li>
+   ——CF 会给外发邮件签名，Gmail 会退回 SPF 判定——但 DKIM 校验不会通过，
+   收件箱信任度会打折。所以脚本写的 DMARC 是 <code>p=none</code>：这样"DKIM 失败"不会
+   连带"DMARC 严格策略失败"，不会被拦进垃圾箱。要彻底修好：在面板里启用一次
+   Email Routing（Compute &gt; Email Service &gt; Email Routing &gt; linkattest.com），
+   CF 会补上 DKIM 记录，然后带 <code>--publish-dkim</code> 重跑脚本，DKIM 由脚本自己写。</li>
 <li><strong>目标地址必须事先验证过。</strong> 目标地址是账户级的，本 token 既不能列
    也不能建。在收件邮箱点掉 CF 的验证邮件之前，CF 会让规则保持未激活并
-   丢弃邮件——而 API 仍然返回 <code>enabled=true</code>，所以不要单独相信这个字段。</li>
+   丢弃邮件——而 API 仍然返回 <code>enabled=true</code>，所以不要单独相信这个字段。
+   <code>--probe-destination</code> 就是查这件事的命令。</li>
 </ol>
 <p>另一个坑：对规则 id 做 <code>PATCH</code> 会被同一个 token 以 "Authentication error"
 拒绝，尽管它可以 <code>POST</code> 和 <code>PUT</code> 规则。脚本的更新路径一律用 <code>PUT</code>，不用
