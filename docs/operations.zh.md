@@ -35,6 +35,7 @@ python3 bin/osched.py import-workbench ~/seo/<site>/targets.jsonl [--min-fit 50]
 | 邮件 | `channel=email` 默认人工，除非项目声明 `delivery: {email_auto: true}` | R-520：外联邮件人工发送 |
 | 表单 | 实时页面必须存在含 url 类字段的表单 | 登录/注册/搜索/订阅框不是提交表单 |
 | 验证码 | 浏览器类 → `cua`；未知 → `human` | §7.1 分级；缓存的旧验证码不会把无表单页面送进浏览器 |
+| 判定 | HTTP 2xx 本身不构成 `submitted` | POST 响应扫描成功/失败/已存在文案（剥离 script）与表单重渲染；带失败文案或重渲染表单的 2xx → `human`，完全无信号才信任 2xx |
 
 ## 实链告警（证据层）
 

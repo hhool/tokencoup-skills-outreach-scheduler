@@ -118,6 +118,11 @@ wave-3 human queue. The curated ledger the SEO workbench keeps per site
 <td>browser-class captcha -&gt; <code>cua</code>; unknown -&gt; <code>human</code></td>
 <td>§7.1 tiers; a stale cached captcha never routes a formless page to a browser</td>
 </tr>
+<tr>
+<td>verdict</td>
+<td>HTTP 2xx alone is never <code>submitted</code></td>
+<td>POST responses are scanned for success / failure / already-listed copy (scripts stripped) and for a re-rendered submit form; ambiguous 2xx goes to <code>human</code>, silent re-render goes to <code>human</code>, no signals at all trusts 2xx</td>
+</tr>
 </tbody>
 </table>
 <h2>Live-link alerts (evidence layer)</h2>
@@ -287,6 +292,11 @@ wordpress.com、reddit、tumblr。这些要「开户 + 发文」，不是表单�
 <td>验证码</td>
 <td>浏览器类 → <code>cua</code>；未知 → <code>human</code></td>
 <td>§7.1 分级；缓存的旧验证码不会把无表单页面送进浏览器</td>
+</tr>
+<tr>
+<td>判定</td>
+<td>HTTP 2xx 本身不构成 <code>submitted</code></td>
+<td>POST 响应扫描成功/失败/已存在文案（剥离 script）与表单重渲染；带失败文案或重渲染表单的 2xx → <code>human</code>，完全无信号才信任 2xx</td>
 </tr>
 </tbody>
 </table>

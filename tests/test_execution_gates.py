@@ -171,10 +171,89 @@ def test_post_form_echoes_state_values(monkeypatch):
         return FakeResp()
 
     monkeypatch.setattr(executor.urllib.request, "urlopen", fake_urlopen)
-    status, _ = executor._post_form(
+    status, _, _ = executor._post_form(
         "https://dir.example/add",
         ["__VIEWSTATE", "siteURLInputN2"], {"url": "https://t.example/"}, 5.0,
         {"__VIEWSTATE": "abc123"})
     assert status == 200
     assert "__VIEWSTATE=abc123" in captured["data"]
     assert "siteURLInputN2=https%3A%2F%2Ft.example%2F" in captured["data"]
+
+
+# --------------------------------------------------------------------------
+# POST verdict: 2xx alone is not success — copy recognition + form re-render
+# --------------------------------------------------------------------------
+
+def test_copy_verdict_success_and_already():
+    assert probe.copy_verdict(
+        "<p>Thank you for your submission!</p>")["success"]
+    assert probe.copy_verdict(
+        "<p>Your link has been added and is pending review.</p>")["success"]
+    v = probe.copy_verdict("<p>This URL already exists in our directory.</p>")
+    assert v["already"] and not v["success"]
+
+
+def test_copy_verdict_ignores_script_error_strings():
+    """JS error strings in page chrome must not read as failure copy."""
+    html = ("<script>if (x) { throw new Error('invalid'); }</script>"
+            "<p>Thanks, your submission was received.</p>")
+    v = probe.copy_verdict(html)
+    assert v["success"] and not v["failure"]
+
+
+def _form_row():
+    import sqlite3
+    conn = sqlite3.connect(":memory:")
+    conn.row_factory = sqlite3.Row
+    conn.execute("CREATE TABLE t(entry_url TEXT, url TEXT, captcha_type TEXT)")
+    conn.execute("INSERT INTO t VALUES('https://dir.example/add',"
+                 "'https://dir.example','none')")
+    return conn.execute("SELECT * FROM t").fetchone()
+
+
+def _run_exec_form(monkeypatch, body: str, fields=("site_url", "title")):
+    monkeypatch.setattr(executor, "_parse_live_form",
+                        lambda entry, timeout:
+                        ("https://dir.example/add", list(fields), "none", {}))
+    monkeypatch.setattr(executor, "_post_form",
+                        lambda *a, **kw: (200, body, ""))
+    return executor.exec_form(
+        None, {}, {"domain": "c.example"}, _form_row(),
+        {"url": "https://c.example/", "title": "C", "description": "d",
+         "email": ""}, dry_run=False)
+
+
+def test_2xx_with_success_copy_is_submitted(monkeypatch):
+    out = _run_exec_form(
+        monkeypatch, "<p>Thank you for your submission. We will review it.</p>")
+    assert out["state"] == "submitted"
+    assert "success" in out["note"] or "Thank" in out["note"]
+
+
+def test_2xx_with_failure_copy_is_human(monkeypatch):
+    out = _run_exec_form(
+        monkeypatch, "<p>Error: please enter a valid URL.</p>")
+    assert out["state"] == "human"
+    assert "failure copy" in out["note"]
+
+
+def test_2xx_form_rerendered_is_human(monkeypatch):
+    """Silent rejection: 200 with the same submission form redrawn."""
+    out = _run_exec_form(monkeypatch, """
+        <form action="/add" method="post">
+          <input name="site_url"><input name="title">
+        </form>""")
+    assert out["state"] == "human"
+    assert "re-rendered" in out["note"]
+
+
+def test_2xx_no_signals_stays_submitted(monkeypatch):
+    """Redirected to a landing page with no copy and no form: trust 2xx."""
+    out = _run_exec_form(monkeypatch, "<html><body><h1>Directory</h1></body></html>")
+    assert out["state"] == "submitted"
+
+
+def test_already_listed_is_submitted(monkeypatch):
+    out = _run_exec_form(
+        monkeypatch, "<p>That URL already exists in our directory.</p>")
+    assert out["state"] == "submitted" and "already" in out["note"]

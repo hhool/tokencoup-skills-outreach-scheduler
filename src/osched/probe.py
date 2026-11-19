@@ -211,6 +211,62 @@ def _looks_like_submit_form(html: str) -> tuple[bool, list[str]]:
     return ok, fields
 
 
+# --------------------------------------------------------------------------
+# POST response copy recognition — a 2xx alone proves nothing: form plugins
+# re-render the same page with an inline error at HTTP 200.
+# --------------------------------------------------------------------------
+
+SUCCESS_COPY_RE = re.compile(
+    r"thank(?:s| you)[^<]{0,60}(submission|submit|listing|link|adding)"
+    r"|succes{2}fully? (?:submitted|added|received|listed|published)"
+    r"|(?:link|site|url|listing|submission) (?:was|has been|is) "
+    r"(?:submitted|added|received|approved|published|accepted|scheduled)"
+    r"|pending (?:review|approval)|will be (?:reviewed|approved|listed)"
+    r"|await(?:ing)? (?:review|approval)|under review"
+    r"|submitted (?:successfully|for review)|added (?:successfully|to (?:our|the) )"
+    r"|提交成功|已提交|感谢(?:您的?|你的)?(?:提交|投稿)",
+    re.I)
+
+FAILURE_COPY_RE = re.compile(
+    r"\berror\b|invalid|incorrect|not a valid|(?:is|are) required"
+    r"|required field|please (?:enter|fill|provide|select|fix|check|complete)"
+    r"|must (?:be|contain|include)|cannot be (?:empty|blank)|field is empty"
+    r"|verification (?:failed|code)|captcha (?:error|required|failed|invalid)"
+    r"|submission (?:failed|rejected)|could not (?:be )?(?:added|submit|save)"
+    r"|something went wrong|failed to (?:submit|add|save)"
+    r"|请填写|必填|验证码|提交失败|请输入",
+    re.I)
+
+ALREADY_COPY_RE = re.compile(
+    r"already (?:submitted|exists|listed|in (?:our|the) (?:directory|database|list))"
+    r"|duplicate (?:submission|entry|url|listing)"
+    r"|already in our|重复提交|已存在",
+    re.I)
+
+_SCRIPT_STYLE_RE = re.compile(
+    r"<(script|style)\b.*?</\1\s*>", re.I | re.S)
+
+
+def copy_verdict(body: str) -> dict[str, str]:
+    """Scan a POST response body for success/failure/already-listed copy.
+
+    Script and style blocks are stripped first: JS error strings in page
+    chrome must not read as failure copy. Returns {success, failure, already}
+    with the first matched snippet (trimmed) or "" per key.
+    """
+    out = {"success": "", "failure": "", "already": ""}
+    if not body:
+        return out
+    text = _SCRIPT_STYLE_RE.sub(" ", body)
+    for key, rex in (("success", SUCCESS_COPY_RE),
+                     ("failure", FAILURE_COPY_RE),
+                     ("already", ALREADY_COPY_RE)):
+        m = rex.search(text)
+        if m:
+            out[key] = " ".join(m.group(0).split())[:80]
+    return out
+
+
 def probe_site(url: str, *, timeout: float = 12.0,
                max_candidates: int = 3) -> ProbeResult:
     """Probe one site: homepage first, then submit-endpoint candidates."""
