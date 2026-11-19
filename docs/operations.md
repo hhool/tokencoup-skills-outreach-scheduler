@@ -50,7 +50,8 @@ existing account ledger:
 |---|---|---|
 | 1. signup | `osched register-signup <domain>`: CUA opens the platform (static-first discovery over `/register` `/signup` `/sign-up` `/join`, then CUA walks the same paths), finds the signup form (password + identity fields, login forms rejected), fills identity + generated password, submits | done; captcha or no-form -> `human` |
 | 2. verify mail | `osched mail-verify` (IMAP) extracts activation links/codes -> `account.activation_url` | done (existing) |
-| 3. activate + post | `osched account-activate` (CUA clicks the link); posting with the backlink is stage 2 | activation done; posting pending |
+| 3. activate + post | `osched account-activate` (CUA clicks the link); `osched register-publish` logs in, finds a link-bearing form, posts and writes `plan(state=submitted)` so verify can see it | done |
+| 1b. captcha handoff | `osched register-signup <domain> --assist` pauses on a challenge, writes `data_root/captcha_handoff/<domain>.json`, and waits for the operator to solve it in the visible browser and touch the `.go` marker (`osched handoff-status <domain>` to inspect) | done; no automated captcha solving |
 
 Pilot (2026-11-19, 6 confirmed targets): 0 signed — every big platform gates
 signup with captcha/anti-bot (alternativeto, sitelike = turnstile; youtube,
@@ -58,6 +59,15 @@ tumblr = bot-block/timeout; jasmine, jouwpagina = no reachable form). The
 channel needs the human-in-the-loop mix: CUA navigates, a human solves the
 captcha. Passwords are per-account generated, stored only in the account
 ledger, masked in every output.
+
+## Outreach mail quality gate
+
+`executor.mail_quality_gate` blocks SMTP for plans that would damage the
+sending domain: non-prospect targets (`submit_type` not pitch/email/outreach),
+placeholder `category=general/other/unknown`, a domain used as `sender_name`,
+or unrendered `{{...}}` placeholders. Blocked rows go to `human` with the
+reason in `result_note`; no mail is sent. The first review (2026-11-19)
+rejected two pitch rows aimed at a news daily and a study-abroad agency.
 
 ## Live-link alerts (evidence layer)
 

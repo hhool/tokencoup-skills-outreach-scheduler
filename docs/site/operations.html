@@ -155,8 +155,13 @@ existing account ledger:</p>
 </tr>
 <tr>
 <td>3. activate + post</td>
-<td><code>osched account-activate</code> (CUA clicks the link); posting with the backlink is stage 2</td>
-<td>activation done; posting pending</td>
+<td><code>osched account-activate</code> (CUA clicks the link); <code>osched register-publish</code> logs in, finds a link-bearing form, posts and writes <code>plan(state=submitted)</code> so verify can see it</td>
+<td>done</td>
+</tr>
+<tr>
+<td>1b. captcha handoff</td>
+<td><code>osched register-signup &lt;domain&gt; --assist</code> pauses on a challenge, writes <code>data_root/captcha_handoff/&lt;domain&gt;.json</code>, and waits for the operator to solve it in the visible browser and touch the <code>.go</code> marker (<code>osched handoff-status &lt;domain&gt;</code> to inspect)</td>
+<td>done; no automated captcha solving</td>
 </tr>
 </tbody>
 </table>
@@ -166,6 +171,13 @@ tumblr = bot-block/timeout; jasmine, jouwpagina = no reachable form). The
 channel needs the human-in-the-loop mix: CUA navigates, a human solves the
 captcha. Passwords are per-account generated, stored only in the account
 ledger, masked in every output.</p>
+<h2>Outreach mail quality gate</h2>
+<p><code>executor.mail_quality_gate</code> blocks SMTP for plans that would damage the
+sending domain: non-prospect targets (<code>submit_type</code> not pitch/email/outreach),
+placeholder <code>category=general/other/unknown</code>, a domain used as <code>sender_name</code>,
+or unrendered <code>{{...}}</code> placeholders. Blocked rows go to <code>human</code> with the
+reason in <code>result_note</code>; no mail is sent. The first review (2026-11-19)
+rejected two pitch rows aimed at a news daily and a study-abroad agency.</p>
 <h2>Live-link alerts (evidence layer)</h2>
 <p>Every verify pass also runs edge detection over the check series and
 emails the ops mailbox (<code>cfg.report.email</code>) — never the client directly;
@@ -370,8 +382,13 @@ wordpress.com、reddit、tumblr。这些要「开户 + 发文」，不是表单�
 </tr>
 <tr>
 <td>3. 激活 + 发文</td>
-<td><code>osched account-activate</code>（CUA 点击激活链接）；带链发文属阶段 2</td>
-<td>激活已有；发文待建</td>
+<td><code>osched account-activate</code>（CUA 点击激活链接）；<code>osched register-publish</code> 登录、找含 URL 的表单、发文并落 <code>plan(state=submitted)</code> 供验活</td>
+<td>完成</td>
+</tr>
+<tr>
+<td>1b. 验证码交接</td>
+<td><code>osched register-signup &lt;domain&gt; --assist</code> 遇验证码暂停，写 <code>data_root/captcha_handoff/&lt;domain&gt;.json</code>，等人工在可见浏览器解决后 touch <code>.go</code> 信号（<code>osched handoff-status &lt;domain&gt;</code> 查看）</td>
+<td>完成；不做自动过码</td>
 </tr>
 </tbody>
 </table>
@@ -379,6 +396,12 @@ wordpress.com、reddit、tumblr。这些要「开户 + 发文」，不是表单�
 （alternativeto、sitelike = turnstile；youtube、tumblr = 反爬/超时；jasmine、
 jouwpagina = 无可达表单）。通道需要人机混合：CUA 导航、人工过验证码。密码按账号
 生成，仅存账号台账，所有输出路径均掩码。</p>
+<h2>外联邮件质量闸门</h2>
+<p><code>executor.mail_quality_gate</code> 在 SMTP 前拦下会烧发件域名的计划：目标非 pitch
+对象（<code>submit_type</code> 不是 pitch/email/outreach）、<code>category=general/other/unknown</code>
+占位、<code>sender_name</code> 是域名、或未渲染的 <code>{{...}}</code>。拦截行转 <code>human</code>，原因写进
+<code>result_note</code>，不发任何邮件。首次审查（2026-11-19）拦下两条发往新闻日报与
+留学中介的 pitch。</p>
 <h2>实链告警（证据层）</h2>
 <p>每次验活同时对检查序列做边沿检测，命中即发运维信箱
 （<code>cfg.report.email</code>）——不直发客户；客户通过周报与证据页感知掉链。</p>

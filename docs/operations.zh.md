@@ -47,12 +47,21 @@ python3 bin/osched.py import-workbench ~/seo/<site>/targets.jsonl [--min-fit 50]
 |---|---|---|
 | 1. 开户 | `osched register-signup <domain>`：CUA 打开平台（先静态发现 `/register` `/signup` `/sign-up` `/join`，被挡再由 CUA 走同批路径），识别注册表单（密码 + 身份字段，登录表单拒绝），填身份字段 + 生成密码，提交 | 完成；验证码/无表单 → `human` |
 | 2. 验证邮件 | `osched mail-verify`（IMAP）提取激活链接/验证码 → `account.activation_url` | 完成（既有） |
-| 3. 激活 + 发文 | `osched account-activate`（CUA 点击激活链接）；带链发文属阶段 2 | 激活已有；发文待建 |
+| 3. 激活 + 发文 | `osched account-activate`（CUA 点击激活链接）；`osched register-publish` 登录、找含 URL 的表单、发文并落 `plan(state=submitted)` 供验活 | 完成 |
+| 1b. 验证码交接 | `osched register-signup <domain> --assist` 遇验证码暂停，写 `data_root/captcha_handoff/<domain>.json`，等人工在可见浏览器解决后 touch `.go` 信号（`osched handoff-status <domain>` 查看） | 完成；不做自动过码 |
 
 试点（2026-11-19，6 个 confirmed 目标）：0 开户成功——大平台开户全部有验证码/反爬
 （alternativeto、sitelike = turnstile；youtube、tumblr = 反爬/超时；jasmine、
 jouwpagina = 无可达表单）。通道需要人机混合：CUA 导航、人工过验证码。密码按账号
 生成，仅存账号台账，所有输出路径均掩码。
+
+## 外联邮件质量闸门
+
+`executor.mail_quality_gate` 在 SMTP 前拦下会烧发件域名的计划：目标非 pitch
+对象（`submit_type` 不是 pitch/email/outreach）、`category=general/other/unknown`
+占位、`sender_name` 是域名、或未渲染的 `{{...}}`。拦截行转 `human`，原因写进
+`result_note`，不发任何邮件。首次审查（2026-11-19）拦下两条发往新闻日报与
+留学中介的 pitch。
 
 ## 实链告警（证据层）
 
