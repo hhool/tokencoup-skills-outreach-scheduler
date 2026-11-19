@@ -303,3 +303,11 @@ def test_publish_dkim_reports_a_blocked_endpoint_instead_of_guessing():
                                        "message": "Authentication error"}]}
     assert ser.publish_dkim(cf, "linkattest.com") is False
     assert cf.written_records == []
+
+
+def test_publish_dkim_is_a_noop_when_the_record_is_already_there():
+    """The dashboard publishes DKIM itself; the script must not re-create it."""
+    cf = FakeCF(records=[_txt("cf2024-1._domainkey.linkattest.com",
+                               "v=DKIM1; k=rsa; p=abc")])
+    assert ser.publish_dkim(cf, "linkattest.com") is True
+    assert cf.written_records == []

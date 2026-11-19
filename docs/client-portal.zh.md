@@ -346,13 +346,13 @@ Token 权限（实测得出，不是猜的）：
 
 | 项 | 状态 |
 |---|---|
-| MX ×3（`route1/2/3.mx.cloudflare.net`） | 已在 |
+| MX ×3（`route1/2/3.mx.cloudflare.net`） | 已在、无重复 |
 | SPF TXT（`include:_spf.mx.cloudflare.net ~all`） | 已在 |
 | DMARC TXT（`p=none`） | 已在 |
 | 规则 `privacy@linkattest.com` → 运维邮箱 | 已在、已启用、literal 匹配 |
 | 转发目标地址 | **已验证**——CF 接受了指向它的规则 |
 | 外部发往 `privacy@linkattest.com` 的邮件 | CF 的 MX 已接收 |
-| DKIM（`cf2024-1._domainkey`） | **未发布** |
+| DKIM（`cf2024-1._domainkey`） | **已发布**——RSA-2048，公网 DNS 已核对 |
 
 两条只读命令可以随时复查上面每一项，不写任何东西：
 
@@ -368,13 +368,14 @@ python3 tools/setup_email_routing.py --probe-destination # 目标地址验证了
 
 被拒端点带来两个后果：
 
-1. **DKIM 记录没有发布。** CF 通常在面板启用时生成
-   `cf2024-1._domainkey.<zone>`，而返回它的端点被拒。转发邮件仍能送达
-   ——CF 会给外发邮件签名，Gmail 会退回 SPF 判定——但 DKIM 校验不会通过，
-   收件箱信任度会打折。所以脚本写的 DMARC 是 `p=none`：这样"DKIM 失败"不会
-   连带"DMARC 严格策略失败"，不会被拦进垃圾箱。要彻底修好：在面板里启用一次
-   Email Routing（Compute > Email Service > Email Routing > linkattest.com），
-   CF 会补上 DKIM 记录，然后带 `--publish-dkim` 重跑脚本，DKIM 由脚本自己写。
+1. **DKIM 记录只能从面板拿到。** CF 在启用 Email Routing 时生成
+   `cf2024-1._domainkey.<zone>`，而返回它的端点对本 token 是被拒的。在面板
+   里启用一次 Email Routing（Compute > Email Service > Email Routing >
+   linkattest.com）之后，记录就发布了：公网 DNS 现在能查到一把合法的
+   RSA-2048 公钥，转发邮件带的是能过校验的签名，而不只是 SPF 兜底。
+   `--publish-dkim` 会在端点可读时写同一条记录，给那些不走面板搭出来的
+   区域用。DMARC 仍是 `p=none`：这样"DKIM 失败"不会连带"DMARC 严格策略
+   失败"，不会被拦进垃圾箱。
 2. **目标地址必须事先验证过。** 目标地址是账户级的，本 token 既不能列
    也不能建。在收件邮箱点掉 CF 的验证邮件之前，CF 会让规则保持未激活并
    丢弃邮件——而 API 仍然返回 `enabled=true`，所以不要单独相信这个字段。

@@ -388,13 +388,13 @@ Token permissions, verified against the live API rather than assumed:
 
 | item | state |
 |---|---|
-| MX ×3 (`route1/2/3.mx.cloudflare.net`) | present |
+| MX ×3 (`route1/2/3.mx.cloudflare.net`) | present, no duplicates |
 | SPF TXT (`include:_spf.mx.cloudflare.net ~all`) | present |
 | DMARC TXT (`p=none`) | present |
 | rule `privacy@linkattest.com` → operator mailbox | present, enabled, literal matcher |
 | forward target | **verified** — Cloudflare accepted a rule targeting it |
 | external mail to `privacy@linkattest.com` | accepted by Cloudflare's MX |
-| DKIM (`cf2024-1._domainkey`) | **not published** |
+| DKIM (`cf2024-1._domainkey`) | **published** — RSA-2048, verified on the public DNS |
 
 Two read-only commands re-check all of that without writing anything:
 
@@ -413,17 +413,16 @@ satisfied.
 
 Two consequences of the blocked endpoints:
 
-1. **The DKIM record is not published.** CF normally generates
-   `cf2024-1._domainkey.<zone>` during dashboard onboarding; the endpoint
-   that returns it is blocked. Forwarded mail still arrives — CF signs
-   outbound mail and Gmail falls back to SPF — but DKIM verification will
-   not pass, which costs a little inbox trust. The DMARC record this
-   script writes is therefore `p=none`, so a forwarded email that fails
-   DKIM does not also fail a strict DMARC policy and get filtered. To fix
-   properly: enable Email Routing once in the dashboard (Compute > Email
-   Service > Email Routing > linkattest.com), which publishes the DKIM
-   record, then re-run the script with `--publish-dkim` and it writes the
-   record itself.
+1. **The DKIM record had to come from the dashboard.** CF generates
+   `cf2024-1._domainkey.<zone>` when Email Routing is enabled, and the
+   endpoint that returns it is blocked for this token. Enabling Email
+   Routing once in the dashboard (Compute > Email Service > Email Routing
+   > linkattest.com) published the record; the public DNS now serves a
+   valid RSA-2048 key, so forwarded mail carries a signature that passes
+   instead of only an SPF pass. `--publish-dkim` writes the same record
+   when the endpoint is reachable, for zones that are set up without the
+   dashboard. The DMARC record stays `p=none`, so a forwarded email that
+   fails DKIM does not also fail a strict DMARC policy and get filtered.
 2. **The destination must already be verified.** Destination addresses are
    account-level and this token cannot list or create them. Until the
    mailbox confirms the Cloudflare verification email, CF keeps the rule
