@@ -1,0 +1,44 @@
+#!/bin/sh
+# Private-information gate — runs before every commit.
+#
+# Why this exists: README hard rule 4 says `tools/private_scan.py` must pass
+# before every commit. Until now that was only true on paper, which is how a
+# Cloudflare zone id reached a public repo. This hook makes it enforced.
+#
+# Install once per clone:
+#     git config core.hooksPath .githooks
+# (or `sh .githooks/install.sh`)
+#
+# Bypassing: `git commit --no-verify` skips this hook. That is allowed for
+# an emergency, but the commit must be followed by a real fix — do not make
+# --no-verify a habit.
+set -eu
+
+REPO_DIR=$(git rev-parse --show-toplevel)
+cd "$REPO_DIR"
+
+# Pick an interpreter that can import yaml — the scanner itself is stdlib-only,
+# but the CLI it complements is not, and we want one consistent python.
+PY=""
+for cand in python3 python; do
+    if command -v "$cand" >/dev/null 2>&1 \
+       && "$cand" -c 'import sys; sys.exit(0 if sys.version_info >= (3, 9) else 1)' 2>/dev/null; then
+        PY="$cand"
+        break
+    fi
+done
+if [ -z "$PY" ]; then
+    echo "pre-commit: no python3 >= 3.9 found; cannot run private scan" >&2
+    echo "            install python3, or commit with --no-verify and fix later" >&2
+    exit 1
+fi
+
+if ! "$PY" tools/private_scan.py; then
+    echo "" >&2
+    echo "pre-commit: private-information scan FAILED — commit blocked." >&2
+    echo "            Remove the flagged values, then re-stage and commit." >&2
+    echo "            (Emergency escape: git commit --no-verify — fix it after.)" >&2
+    exit 1
+fi
+
+exit 0

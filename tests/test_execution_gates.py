@@ -391,7 +391,7 @@ def test_cua_primary_respects_unknown_captcha(monkeypatch):
 def test_mail_gate_rejects_news_daily_placeholder():
     row = {"submit_type": "pitch"}
     reason = executor.mail_quality_gate(
-        row, {"category": "general", "sender_name": "***REMOVED-PRIVATE-DOMAIN***"},
+        row, {"category": "general", "sender_name": "azgames.example"},
         "Hi,\nWe run {{site_name}}")
     assert "not a pitch" in reason or "placeholder" in reason
 
@@ -415,7 +415,7 @@ def test_mail_gate_rejects_unrendered_template():
 def test_mail_gate_rejects_domain_as_sender():
     row = {"submit_type": "pitch"}
     reason = executor.mail_quality_gate(
-        row, {"category": "browser-games", "sender_name": "***REMOVED-PRIVATE-DOMAIN***"},
+        row, {"category": "browser-games", "sender_name": "azgames.example"},
         "Hi")
     assert "domain, not a person" in reason
 

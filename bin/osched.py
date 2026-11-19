@@ -489,9 +489,9 @@ def cmd_alert_test(cfg: dict) -> int:
             "receipt: (unavailable)\n")
     try:
         report.send_mail(cfg, recipient,
-                         "[linkattest] alert channel TEST: "
+                         f"[{report.brand_name(cfg)}] alert channel TEST: "
                          "link-drop sample (no action needed)",
-                         body, from_label="linkattest-ops")
+                         body, from_label=f"{report.brand_name(cfg)}-ops")
     except Exception as e:  # noqa: BLE001 — surface the SMTP failure verbatim
         print(f"send FAILED: {e}")
         return 1

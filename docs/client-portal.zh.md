@@ -244,13 +244,13 @@ wrangler pages deploy frontend --project-name osched-portal --branch main
 - 品牌/生产域名：**LinkAttest** → `linkattest.com`（2026-11-18 注册，
   CF zone 22:24 active、Pages 证书 22:29 签发——**已上线**：
   apex / www / `/app/` 全部 200）
-- 前端：https://linkattest.com（Cloudflare Pages，项目 `osched-portal`，
-  账号 ***REMOVED-CF-ACCT***…）；`***REMOVED-REVOKED-DOMAIN***` 已于 2026-11-18 **撤销**
+- 前端：https://linkattest.com（Cloudflare Pages，项目名记在运维私账里，
+  不在本仓）；此前用过的那个域名已于 2026-11-18 **撤销**
   （解绑 Pages 自定义域、删除 DNS 记录、不做 301）——linkattest.com
   是唯一前端面
 - 后端 API：https://tokencoup-skills-outreach-scheduler.fly.dev/api/*
-  （fly 专用入口 v4 ***REMOVED-FLY-IPV4*** / v6 ***REMOVED-FLY-IPV6***；
-  这两个固定 IP 同时是 OPR key 改绑目标）
+  （fly 专用入口：一个 IPv4 + 一个 IPv6 固定地址，记在运维私账里、
+  不在本仓；这两个地址同时是 OPR key 改绑目标）
 - 同域名的旧版 HTML 门户保留作回退。
 - CORS 端到端已验证：preflight 204，未带 token 的 /api/dashboard
   返回 401 JSON。
@@ -281,27 +281,28 @@ wrangler pages deploy frontend --project-name osched-portal --branch main
 
 | 项 | 值 |
 |------|------|
-| CF zone id | `***REMOVED-CF-ZONE-ID***`（账号 ***REMOVED-CF-ACCT***…） |
-| 指定 NS | `bowen.ns.cloudflare.com` / `saanvi.ns.cloudflare.com` |
-| DNS 记录 | apex `linkattest.com` CNAME → `osched-portal.pages.dev`（proxied）<br>`www.linkattest.com` CNAME → 同上（proxied） |
+| CF zone id | `<cf-zone-id>`（32 位十六进制，记在运维私账里） |
+| 指定 NS | `<cf-ns-1>` / `<cf-ns-2>`（CF 分配的两个 NS） |
+| DNS 记录 | apex `linkattest.com` CNAME → Pages 的 `*.pages.dev` 目标（proxied）<br>`www.linkattest.com` CNAME → 同上（proxied） |
 | Pages 自定义域 | `linkattest.com` + `www.linkattest.com`，状态 initializing |
 
 **剩余唯一人工步骤**：Namecheap 面板 → Domain List → linkattest.com →
 Manage → Nameservers 选 **Custom DNS**，填上面两个 NS，保存。生效
 通常 0.5–2 小时（最长 24h）。CF zone 变 active 后 Pages 自动签发证书。
 
-NS 生效后：把 fly 的 `PORTAL_FRONTEND_URL` 从
-`https://***REMOVED-REVOKED-DOMAIN***/app/` 换成 `https://linkattest.com/app/`
-（`fly secrets set` + 部署）；OAuth 回调 URI 仍在 fly.dev，不受影响。
+NS 生效后：把 fly 的 `PORTAL_FRONTEND_URL` 设为
+`https://linkattest.com/app/`（`fly secrets set` + 部署），替换掉原值；
+OAuth 回调 URI 仍在 fly.dev，不受影响。
 
 原始 API 步骤（重做时参考）：
 
 ```bash
-CF_TOKEN=...   # 账号级 token，含 Pages:Edit（钥匙串 sextant/cloudflare/default）
-CF_ACCT=***REMOVED-CF-ACCT***...
+CF_TOKEN=...   # 账号级 token，含 Pages:Edit；存在系统钥匙串里，
+               # 服务名记在运维私账里，不进本仓
+CF_ACCT=<cf-account-id>
 
 # 1. 把域名挂到 Pages 项目（NS/记录指向 CF 后，CF 自动校验并发证书）
-curl -X POST "https://api.cloudflare.com/client/v4/accounts/$CF_ACCT/pages/projects/osched-portal/domains" \
+curl -X POST "https://api.cloudflare.com/client/v4/accounts/$CF_ACCT/pages/projects/<cf-pages-project>/domains" \
   -H "Authorization: Bearer $CF_TOKEN" -H "Content-Type: application/json" \
   --data '{"name":"linkattest.com"}'
 
@@ -311,3 +312,21 @@ curl -X POST "https://api.cloudflare.com/client/v4/accounts/$CF_ACCT/pages/proje
 
 后端若也换自定义域名才需更新 `frontend/app.js` 的 `API_BASE`；
 否则 pages.dev → fly.dev 的 CORS 路径保持不变。
+
+### 对外联系邮箱（隐私政策必需）
+
+`frontend/privacy.html` 里写明了数据请求的联系地址；隐私政策要成立，
+这个邮箱必须真人会看。**不能**填个人邮箱——那个地址会进入每个页面的
+HTML、git 历史，以及被抓取后的各种副本。
+
+定稿：`privacy@linkattest.com`，由 **Cloudflare Email Routing** 收信
+（同一个 zone，免费，不需要额外邮件服务商）：
+
+1. 面板 → 该 zone → **Email → Email Routing** → 启用；CF 自动加 MX 记录。
+2. 路由规则 → **Send to** 一个已验证的目标地址（运维自己的邮箱）——CF
+   要求目标地址先确认才转发，所以个人地址保持私密，`privacy@` 保持公开。
+3. 可选：再加 `contact@` 作商务咨询别名；隐私页只用 `privacy@`。
+
+地址若变更，改 `frontend/privacy.html` 与 `frontend/zh/privacy.html`
+各一行即可，不动政策正文。它只是两个静态页里的字符串，不值得为此加配置
+间接层。

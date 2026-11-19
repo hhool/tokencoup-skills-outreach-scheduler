@@ -247,13 +247,42 @@ def _require_any(env_file: str, *keys: str) -> str:
         f"Missing credential {' or '.join(keys)} (env or {env_file})")
 
 
+def brand_name(cfg: dict | None) -> str:
+    """Public-facing product name, for mail labels and visible copy.
+
+    Resolution order: ``portal.brand`` → ``report.brand`` →
+    the ``portal:brand`` env var → the internal project name. Callers that
+    render a name the customer sees (from-labels, privacy URLs) use this
+    instead of a literal, so a rename is one config line.
+    """
+    cfg = cfg or {}
+    brand = ((cfg.get("portal") or {}).get("brand")
+             or (cfg.get("report") or {}).get("brand") or "").strip()
+    if brand:
+        return brand
+    return (os.environ.get("PORTAL_BRAND") or "outreach-scheduler").strip()
+
+
+def privacy_url(cfg: dict) -> str:
+    """Public privacy-policy URL, derived from the configured base URL."""
+    base = (os.environ.get("PORTAL_BASE_URL")
+            or (cfg.get("portal") or {}).get("base_url") or "").rstrip("/")
+    return f"{base}/privacy" if base else "/privacy"
+
+
 def send_mail(cfg: dict, to_addr: str, subject: str, body: str,
-              from_label: str = "outreach-scheduler") -> None:
+              from_label: str | None = None) -> None:
     """Generic text mail over the report SMTP settings; raises on failure.
 
     Used by the daily report, the client portal verification mail, and
     any future B2/B3 mail paths — one credential source, one port rule.
+
+    ``from_label`` defaults to the brand name from config (``portal.brand``,
+    falling back to ``report.brand``) so a public-facing display name is
+    configured in one place instead of being hard-coded at each call site.
     """
+    if from_label is None:
+        from_label = brand_name(cfg)
     s = _smtp_settings(cfg)
     msg = MIMEText(body, "plain", "utf-8")
     msg["Subject"] = Header(subject, "utf-8")

@@ -300,7 +300,8 @@ def _maybe_alert(conn, cfg: dict | None, row, outcome: dict) -> None:
                 receipt_url = url_for(cfg, row["id"])
             except Exception:  # noqa: BLE001 — receipt URL is best-effort
                 pass
-            subject = (f"[linkattest] {kind}: {row['pool_domain']} "
+            subject = (f"[{report_mod.brand_name(cfg)}] {kind}: "
+                       f"{row['pool_domain']} "
                        f"plan#{row['id']} ({info.get('project_domain', '')})")
             body = (f"kind: {kind}\n"
                     f"project: {info.get('project_domain', '')}\n"
@@ -311,7 +312,7 @@ def _maybe_alert(conn, cfg: dict | None, row, outcome: dict) -> None:
                     f"{detail}\n"
                     f"receipt: {receipt_url or '(unavailable)'}\n")
             report_mod.send_mail(cfg, recipient, subject, body,
-                                 from_label="linkattest-verify")
+                                 from_label=f"{report_mod.brand_name(cfg)}-verify")
             result, reason = "sent", recipient
         except Exception as e:  # noqa: BLE001 — alerts never break verify
             result, reason = "failed", str(e)[:150]

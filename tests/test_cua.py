@@ -61,7 +61,7 @@ def test_french_field_names_are_filled():
 
 
 def test_domain_as_sender_name_uses_site_label():
-    ctx = dict(CTX, sender_name="***REMOVED-PRIVATE-DOMAIN***",
+    ctx = dict(CTX, sender_name="azgames.example",
                site_name="AZ Games")
     nom = FakeInput("Nom")
     cua._fill_form(FakePage([nom]), ctx, "https://dir.example")

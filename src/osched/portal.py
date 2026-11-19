@@ -40,7 +40,7 @@ from . import evidence as evidence_mod
 from .guard import (DENY_TEXT, TRIAL_CREDITS, canonical_email, client_ip,
                     draft_quota_message, record_trial, registrable_domain,
                     signup_blocked, trial_verdict)
-from .report import send_mail
+from .report import privacy_url, send_mail
 
 SESSION_DAYS = 14
 VERIFY_HOURS = 24
@@ -1089,7 +1089,7 @@ class PortalHandler(BaseHTTPRequestHandler):
             (uid, client_id, code))
         conn.commit()
         self._api_send({
-            "url": "https://linkattest.com/privacy",
+            "url": privacy_url(self.cfg),
             "confirmation_code": code,
         })
 

@@ -88,7 +88,9 @@ def canonical_email(email: str) -> str:
     ``Foo.Bar+trial@GoogleMail.com`` -> ``foobar@gmail.com``
 
     Only used for trial/abuse keying — the address itself is stored and
-    mailed verbatim.
+    mailed verbatim. The two Google properties above are what this folding
+    unifies; they are named here because the rule is meaningless without
+    them, not because any mailbox is.
     """
     email = (email or "").strip().lower()
     if "@" not in email:

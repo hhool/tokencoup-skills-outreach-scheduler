@@ -29,6 +29,15 @@ report:
   # smtp_host: smtp.gmail.com
   # smtp_port: 587
 
+# Customer-facing identity. Used for mail from-labels (report / verify alerts /
+# portal verification) and the public privacy URL, so a rename is one line
+# instead of a hunt through the source. Both are also settable via env:
+# PORTAL_BRAND and PORTAL_BASE_URL.
+portal:
+  brand: outreach-scheduler         # public product name shown to customers
+  base_url: ""                      # e.g. https://example.com (portal + receipts)
+  # frontend_url: ""                # SPA origin for OAuth handoff (env: PORTAL_FRONTEND_URL)
+
 dr:
   provider: openpagerank           # free 0-10 domain rank, 30k domains/month
   cache_days: 30

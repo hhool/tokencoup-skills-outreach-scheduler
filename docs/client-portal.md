@@ -275,12 +275,14 @@ same machine via `scripts/start.sh` (port 8080, `[http_service]`).
   (registered 2026-11-18, Namecheap; CF zone active 22:24, Pages cert
   issued 22:29 — **live**: apex / www / `/app/` all 200)
 - frontend: https://linkattest.com (Cloudflare Pages, project
-  `osched-portal`, account ***REMOVED-CF-ACCT***…); `***REMOVED-REVOKED-DOMAIN***` was **revoked**
-  2026-11-18 (Pages custom domains detached, DNS records deleted, no
-  redirect) — linkattest.com is the single frontend face
+  `<cf-pages-project>` in the operator's Cloudflare account; the earlier
+  domain used for this portal was revoked 2026-11-18 — Pages custom domains
+  detached, DNS records deleted, no redirect) — linkattest.com is the single
+  frontend face
 - backend API: https://tokencoup-skills-outreach-scheduler.fly.dev/api/*
-  (fly dedicated ingress v4 ***REMOVED-FLY-IPV4*** / v6 ***REMOVED-FLY-IPV6***;
-  these fixed IPs are also the OPR key rebinding target)
+  (fly dedicated ingress: two fixed IPs, one IPv4 + one IPv6 — recorded in
+  the operator's private ops notes, not in this repo; they are also the OPR
+  key rebinding target)
 - legacy HTML portal on the same fly domain stays as a fallback.
 - CORS verified end-to-end: preflight 204, unauthenticated /api/dashboard
   returns 401 JSON.
@@ -316,9 +318,9 @@ Done on 2026-11-18 (Namecheap registration → CF zone → Pages domain → DNS)
 
 | item | value |
 |------|-------|
-| CF zone id | `***REMOVED-CF-ZONE-ID***` (account ***REMOVED-CF-ACCT***…) |
-| assigned NS | `bowen.ns.cloudflare.com` / `saanvi.ns.cloudflare.com` |
-| DNS records | apex `linkattest.com` CNAME → `osched-portal.pages.dev` (proxied)<br>`www.linkattest.com` CNAME → same (proxied) |
+| CF zone id | `<cf-zone-id>` (32 hex chars — in the operator's private notes) |
+| assigned NS | `<cf-ns-1>` / `<cf-ns-2>` (the two name servers CF assigned) |
+| DNS records | apex `linkattest.com` CNAME → the Pages `*.pages.dev` target (proxied)<br>`www.linkattest.com` CNAME → same (proxied) |
 | Pages custom domains | `linkattest.com` + `www.linkattest.com`, status initializing |
 
 **Only remaining manual step**: Namecheap dashboard → Domain List →
@@ -326,20 +328,21 @@ linkattest.com → Manage → Nameservers → **Custom DNS**, enter the two NS
 above, save. Propagation is usually 0.5–2 h (24 h worst case). Once the
 CF zone turns active, Pages issues the certificate automatically.
 
-After NS is live: switch fly's `PORTAL_FRONTEND_URL` from
-`https://***REMOVED-REVOKED-DOMAIN***/app/` to `https://linkattest.com/app/`
-(`fly secrets set` + deploy). OAuth callback URIs stay on fly.dev —
+After NS is live: set fly's `PORTAL_FRONTEND_URL` to
+`https://linkattest.com/app/` (`fly secrets set` + deploy), replacing
+whatever host it held before. OAuth callback URIs stay on fly.dev —
 unaffected.
 
 Original API steps (for re-runs):
 
 ```bash
-CF_TOKEN=...   # account token with Pages:Edit (***REMOVED-KEYCHAIN-PATH***)
-CF_ACCT=***REMOVED-CF-ACCT***...
+CF_TOKEN=...   # account token with Pages:Edit — kept in the OS keychain
+               # under the operator's own service name, never in this repo
+CF_ACCT=<cf-account-id>
 
 # 1. attach the domain to the Pages project (CF validates + provisions
 #    the certificate automatically once NS/records point at CF)
-curl -X POST "https://api.cloudflare.com/client/v4/accounts/$CF_ACCT/pages/projects/osched-portal/domains" \
+curl -X POST "https://api.cloudflare.com/client/v4/accounts/$CF_ACCT/pages/projects/<cf-pages-project>/domains" \
   -H "Authorization: Bearer $CF_TOKEN" -H "Content-Type: application/json" \
   --data '{"name":"linkattest.com"}'
 
@@ -349,3 +352,27 @@ curl -X POST "https://api.cloudflare.com/client/v4/accounts/$CF_ACCT/pages/proje
 
 Also update `API_BASE` in `frontend/app.js` only if the backend gets
 its own domain; otherwise pages.dev → fly.dev CORS path stays as-is.
+
+### Public contact address (required for the privacy policy)
+
+`frontend/privacy.html` names a contact address for data requests, and the
+policy is only honest if that mailbox is read by a human. It must **not** be
+a personal mailbox (that address lands in every page's HTML, in git history,
+and in scraped copies).
+
+Ratified: `privacy@linkattest.com`, delivered by **Cloudflare Email Routing**
+(available on the same zone, free, no extra MX provider):
+
+1. Dashboard → the zone → **Email → Email Routing** → enable; CF adds its MX
+   records automatically.
+2. Routing rules → **Send to** a verified destination address (the operator's
+   existing mailbox) — CF requires the destination to confirm before it
+   forwards, so the personal address stays private while `privacy@` stays
+   public.
+3. Optional: keep `contact@` as a second alias for general sales mail; the
+   privacy page uses `privacy@` only.
+
+If the address ever changes, it is a one-line edit in each of
+`frontend/privacy.html` and `frontend/zh/privacy.html` — never a policy
+rewrite. Because it is a plain string in two static pages, there is no
+config indirection worth adding for it.
