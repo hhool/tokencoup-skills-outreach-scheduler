@@ -436,18 +436,36 @@ def cmd_evidence(cfg: dict, plan_id: int) -> int:
 
 
 def cmd_register_signup(cfg: dict, domain: str, headless: bool,
-                        limit: int) -> int:
+                        limit: int, *, assist: bool = False,
+                        handoff_timeout: float = 300) -> int:
     """CUA auto-signup on confirmed register-type targets without accounts."""
     from osched import signup
     conn = connect(data_root(cfg))
     project = _get_project(cfg, conn, domain)
     stats = signup.run_signup(conn, cfg, project, headless=headless,
-                              limit=limit)
+                              limit=limit, assist=assist,
+                              handoff_timeout=handoff_timeout)
     print(f"register-signup[{domain}]: "
           + json.dumps({k: v for k, v in stats.items() if k != "rows"},
                        ensure_ascii=False))
     for r in stats.get("rows", []):
         print(f"  {r['domain']:<30} {r['state']:<8} {r['note']}")
+    return 0
+
+
+def cmd_register_publish(cfg: dict, domain: str, headless: bool,
+                         limit: int) -> int:
+    """CUA publish from active register accounts (chain stage 2)."""
+    from osched import publish
+    conn = connect(data_root(cfg))
+    project = _get_project(cfg, conn, domain)
+    stats = publish.run_publish(conn, cfg, project, headless=headless,
+                                limit=limit)
+    print(f"register-publish[{domain}]: "
+          + json.dumps({k: v for k, v in stats.items() if k != "rows"},
+                       ensure_ascii=False))
+    for r in stats.get("rows", []):
+        print(f"  {r['domain']:<30} {r['state']:<10} {r['note']}")
     return 0
 
 
@@ -662,6 +680,17 @@ def main(argv: list[str] | None = None) -> int:
     p_rsup.add_argument("domain")
     p_rsup.add_argument("--headless", action="store_true")
     p_rsup.add_argument("--limit", type=int, default=0)
+    p_rsup.add_argument("--assist", action="store_true",
+                        help="pause on captcha; operator solves it in the "
+                             "visible browser and touches the .go marker")
+    p_rsup.add_argument("--handoff-timeout", type=int, default=300)
+    p_go = sub.add_parser("handoff-status", help="captcha handoff state")
+    p_go.add_argument("domain")
+    p_rpub = sub.add_parser("register-publish",
+                            help="CUA publish a link from active accounts")
+    p_rpub.add_argument("domain")
+    p_rpub.add_argument("--headless", action="store_true")
+    p_rpub.add_argument("--limit", type=int, default=0)
     p_prof = sub.add_parser("profile",
                             help="per-domain submittability profile (B4)")
     p_prof.add_argument("--domain", default=None,
@@ -736,7 +765,17 @@ def main(argv: list[str] | None = None) -> int:
                                     args.limit)
     if args.cmd == "register-signup":
         return cmd_register_signup(cfg, args.domain, args.headless,
-                                   args.limit)
+                                   args.limit, assist=args.assist,
+                                   handoff_timeout=args.handoff_timeout)
+    if args.cmd == "handoff-status":
+        from osched import handoff
+        import json as _json
+        rec = handoff.status(cfg, args.domain)
+        print(_json.dumps(rec or {"status": "none"}, ensure_ascii=False))
+        return 0
+    if args.cmd == "register-publish":
+        return cmd_register_publish(cfg, args.domain, args.headless,
+                                    args.limit)
     if args.cmd == "profile":
         return cmd_profile(cfg, args.domain, args.limit)
     if args.cmd == "overview":

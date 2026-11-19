@@ -312,3 +312,39 @@ def test_cua_primary_respects_unknown_captcha(monkeypatch):
         None, {}, {"domain": "c.example", "delivery": {"cua_primary": True}},
         _form_row(), {"url": "https://c.example/"}, dry_run=False)
     assert out["state"] == "human"       # captcha gate stays above cua_primary
+
+
+# --------------------------------------------------------------------------
+# mail quality gate: never send an unpersonalised pitch to a non-prospect
+# --------------------------------------------------------------------------
+
+def test_mail_gate_rejects_news_daily_placeholder():
+    row = {"submit_type": "pitch"}
+    reason = executor.mail_quality_gate(
+        row, {"category": "general", "sender_name": "***REMOVED-PRIVATE-DOMAIN***"},
+        "Hi,\nWe run {{site_name}}")
+    assert "not a pitch" in reason or "placeholder" in reason
+
+
+def test_mail_gate_allows_personalised_prospect():
+    row = {"submit_type": "pitch"}
+    reason = executor.mail_quality_gate(
+        row, {"category": "browser-games", "sender_name": "Alex Chen"},
+        "Hi,\nWe run AZ Games")
+    assert reason == ""
+
+
+def test_mail_gate_rejects_unrendered_template():
+    row = {"submit_type": "pitch"}
+    reason = executor.mail_quality_gate(
+        row, {"category": "browser-games", "sender_name": "Alex Chen"},
+        "Hello {{name}}")
+    assert "unrendered" in reason
+
+
+def test_mail_gate_rejects_domain_as_sender():
+    row = {"submit_type": "pitch"}
+    reason = executor.mail_quality_gate(
+        row, {"category": "browser-games", "sender_name": "***REMOVED-PRIVATE-DOMAIN***"},
+        "Hi")
+    assert "domain, not a person" in reason

@@ -337,6 +337,32 @@ def _sender_identity(cfg: dict, project: dict) -> dict:
     return ident
 
 
+# Outreach quality gate (2026-11-19 review): the first two wave2 drafts were
+# sent to a news daily and a study-abroad agency — neither is a directory,
+# and the template still had `category=general` + a domain as sender name.
+# Sending those burns the sending domain's reputation. A plan must clear
+# all three checks before SMTP is touched.
+PITCH_TARGET_TYPES = {"pitch", "email", "outreach"}
+PLACEHOLDER_CATEGORIES = {"", "general", "other", "unknown", "misc"}
+
+
+def mail_quality_gate(row, ctx: dict, body: str) -> str:
+    """Return a rejection reason; '' means safe to send."""
+    keys = row.keys() if hasattr(row, "keys") else []
+    st = ((row["submit_type"] if "submit_type" in keys else "") or "").strip().lower()
+    if st not in PITCH_TARGET_TYPES:
+        return f"target submit_type={st or 'empty'} is not a pitch/outreach prospect"
+    cat = (ctx.get("category") or "").strip().lower()
+    if cat in PLACEHOLDER_CATEGORIES:
+        return f"category={cat or 'empty'} is a placeholder — not personalised"
+    sender = (ctx.get("sender_name") or "").strip()
+    if "." in sender and "@" not in sender:
+        return "sender_name is a domain, not a person — would look automated"
+    if "{{" in body:
+        return "unrendered template placeholders remain"
+    return ""
+
+
 def exec_email(conn, cfg: dict, project: dict, row, ctx: dict,
                dry_run: bool) -> dict:
     """Execute one wave2 email plan row. Returns the outcome dict."""
@@ -358,6 +384,11 @@ def exec_email(conn, cfg: dict, project: dict, row, ctx: dict,
     sender_pass = _require_any(ident.get("env_file"),
                                "SMTP_APP_PASSWORD", "SMTP_PASS")
     from_addr = ident.get("from") or sender_user
+
+    gate = mail_quality_gate(row, ctx, body)
+    if gate:
+        return {"state": "human",
+                "note": f"mail quality gate: {gate} -> human (no SMTP touched)"}
 
     if dry_run:
         return {"state": "dry-run",

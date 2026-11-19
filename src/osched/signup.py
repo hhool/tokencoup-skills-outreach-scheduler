@@ -191,8 +191,14 @@ def _looks_successful(html: str, had_pw_form: bool) -> bool:
 
 
 def run_signup(conn, cfg: dict, project: dict, *, headless: bool = False,
-               limit: int = 0) -> dict:
-    """Signup on all pending register candidates for one project. Serial."""
+               limit: int = 0, assist: bool = False,
+               handoff_timeout: float = 300) -> dict:
+    """Signup on all pending register candidates for one project. Serial.
+
+    `assist` requires a visible browser: on captcha it pauses, writes a
+    handoff status file, and waits for the operator's `.go` marker before
+    continuing on the same page. No captcha solving is attempted here.
+    """
     if sync_playwright is None:
         raise RuntimeError("playwright not installed — pip install playwright"
                            " && playwright install chromium")
@@ -243,9 +249,28 @@ def run_signup(conn, cfg: dict, project: dict, *, headless: bool = False,
                             entry = u
                             break
                     if cap != "none":
-                        outcome = {"state": "human",
-                                   "note": f"captcha={cap} -> manual signup"}
-                    elif not ok:
+                        if assist and not headless:
+                            from . import handoff as handoff_mod
+                            handoff_mod.request_handoff(
+                                cfg, dom, url=page.url, note=f"captcha={cap}")
+                            print(f"[handoff] {dom}: captcha={cap} — "
+                                  f"solve it in the browser window, then "
+                                  f"touch: {handoff_mod.go_path(cfg, dom)}",
+                                  flush=True)
+                            if handoff_mod.wait_for_go(
+                                    cfg, dom, timeout=handoff_timeout):
+                                page.wait_for_timeout(1000)
+                                html = page.content()
+                                cap = signup_captcha_hint(html)
+                                ok, _, _ = find_signup_form(html)
+                            else:
+                                outcome = {"state": "human",
+                                           "note": f"captcha={cap}; handoff "
+                                                   "timed out"}
+                        if cap != "none":
+                            outcome = {"state": "human",
+                                       "note": f"captcha={cap} -> manual signup"}
+                    if cap == "none" and not ok:
                         outcome = {"state": "human",
                                    "note": "no signup form found "
                                            "(entry + common paths)"}
