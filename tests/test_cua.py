@@ -102,3 +102,19 @@ def test_pick_form_uses_submit_form_not_search():
             return [search, submit] if sel == "form" else []
 
     assert cua._pick_form(P()) is submit
+
+
+def test_classic_directory_class_field_filled_with_category():
+    """cam111 /url-submit: name+siteurl+email+class, all JS-required.
+    Leaving `class` blank trips the page's own "Bad Category!" validator."""
+    ctx = dict(CTX, category="Games")
+    name = FakeInput("name")
+    url = FakeInput("siteurl")
+    email = FakeInput("email")
+    klass = FakeInput("class")
+    page = FakePage([name, url, email, klass])
+
+    assert cua._fill_form(page, ctx, "http://cam111.com/url-submit") is True
+    assert klass.value == "Games"
+    assert url.value == "https://azgames.example/"
+    assert name.value == "Jane Doe"

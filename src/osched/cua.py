@@ -150,6 +150,13 @@ def _fill_form(page, ctx: dict, entry_url: str, form=None) -> bool:
             elif "mail" in name or "email" in name or "e-mail" in name:
                 if ctx.get("email"):
                     handle.fill(ctx["email"]); filled += 1
+            elif (name in ("class", "category", "cat", "section", "topic",
+                           "niche", "industry") or "categ" in name
+                  or name.startswith("cat_")):
+                # Classic PHP directories ask a free-text `class`/`category`
+                # and JS-validate it as required (cam111: "Bad Category!").
+                if ctx.get("category"):
+                    handle.fill(str(ctx["category"])[:80]); filled += 1
             elif any(k in name for k in ("url", "link", "site", "web")):
                 handle.fill(ctx["url"]); filled += 1
         except Exception:

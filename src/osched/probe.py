@@ -88,6 +88,36 @@ CONTACT_HIDDEN_RE = re.compile(
     r"name\s*=\s*['\"](?:action|task|op)['\"][^>]*value\s*=\s*['\"]"
     r"(?:cdt_contact|cdt_subscribe|contact|subscribe|feedback)", re.I)
 
+# A site-search box can never publish a listing, yet Google CSE / WordPress
+# search widgets carry hidden `siteurl` + `ref` fields that look exactly like a
+# destination. jayisgames.com/game-submit was flagged as a submission page for
+# this reason. Detect the search box and skip the whole form.
+SEARCH_FIELD_NAMES = {"q", "s", "query", "search", "keyword", "keywords",
+                      "searchterm", "search_query", "searchterm"}
+INPUT_TAG_RE = re.compile(r"<input\b[^>]*>", re.I)
+INPUT_NAME_RE = re.compile(r"name\s*=\s*[\"']([^\"']+)[\"']", re.I)
+INPUT_TYPE_RE = re.compile(r"type\s*=\s*[\"']([^\"']+)[\"']", re.I)
+NON_ENTRY_TYPES = {"hidden", "submit", "button", "image", "reset", "checkbox",
+                   "radio", "file"}
+
+
+def input_fields(block: str) -> list[tuple[str, str]]:
+    """(name, type) for every named input in a form block; type defaults text."""
+    out: list[tuple[str, str]] = []
+    for tag in INPUT_TAG_RE.findall(block):
+        name_m = INPUT_NAME_RE.search(tag)
+        if not name_m:
+            continue
+        type_m = INPUT_TYPE_RE.search(tag)
+        out.append((name_m.group(1), (type_m.group(1) if type_m else "text").lower()))
+    return out
+
+
+def is_search_form(fields: list[tuple[str, str]]) -> bool:
+    """True for a keyword search box (visible `q`/`search` text input)."""
+    return any(name.lower() in SEARCH_FIELD_NAMES and kind not in NON_ENTRY_TYPES
+               for name, kind in fields)
+
 
 @dataclass
 class ProbeResult:
@@ -204,6 +234,9 @@ def find_submit_form(html: str) -> tuple[bool, list[str], str]:
         names = [f.lower() for f in fields]
         if not names:
             continue
+        typed = input_fields(block)
+        if is_search_form(typed):
+            continue        # keyword search box, not a submission form
         if any(CREDENTIAL_FIELD_RE.search(n) for n in names):
             continue        # login / signup / password reset
         open_tag = block[: block.find(">") + 1]
@@ -215,7 +248,10 @@ def find_submit_form(html: str) -> tuple[bool, list[str], str]:
             continue        # contact/feedback handler, not a listing submit
         if CONTACT_HIDDEN_RE.search(block):
             continue        # hidden action=cdt_contact / subscribe
-        if not any(k in n for n in names for k in URL_FIELD_KEYS):
+        # The destination field must be something we can actually type into:
+        # a hidden `siteurl` is search/referrer plumbing, not a listing field.
+        if not any(k in name.lower() and kind not in NON_ENTRY_TYPES
+                   for name, kind in typed for k in URL_FIELD_KEYS):
             continue        # search box, newsletter box, contact form
         return True, fields, action
     return False, [], ""

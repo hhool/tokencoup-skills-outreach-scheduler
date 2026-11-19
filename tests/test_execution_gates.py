@@ -92,6 +92,44 @@ def test_real_listing_form_with_contact_words_in_path_still_works():
     assert ok and "site_url" in fields
 
 
+def test_site_search_form_with_hidden_siteurl_is_not_a_submission_form():
+    """jayisgames.com/game-submit: Google CSE widget carries hidden `siteurl`
+    and `ref` next to a visible `q` box — it searches, it does not publish."""
+    html = """<form id="cse-search-box" action="https://jayisgames.com/search/">
+      <input type="hidden" value="partner-pub" name="cx"/>
+      <input type="text" size="24" name="q"/>
+      <input type="submit" value="Search" name="sa"/>
+      <input type="hidden" name="siteurl" value="jayisgames.com/games/"/>
+      <input type="hidden" name="ref" value="jayisgames.com/"/>
+    </form>"""
+    ok, _ = probe._looks_like_submit_form(html)
+    assert ok is False
+
+
+def test_hidden_only_destination_field_is_not_a_submission_form():
+    """A destination we cannot type into is plumbing, not a submit field."""
+    html = """<form action="/newsletter">
+      <input type="hidden" name="website"><input name="email">
+    </form>"""
+    ok, _ = probe._looks_like_submit_form(html)
+    assert ok is False
+
+
+def test_classic_directory_form_still_accepted():
+    """cam111.com/url-submit: name+siteurl+email+class with hidden action=add."""
+    html = """<form action="/url-submit/" method="post" name="siteadd"
+      onSubmit="return Validator.Validate(this,3)">
+      <input name="name" type="text" dataType="Require">
+      <input name="siteurl" type="text" value="http://">
+      <input name="email" type="text" dataType="Email">
+      <input name="class" type="text">
+      <input type="hidden" name="action" value="add"/>
+      <input type="submit" value="Submit" name="dosubmit">
+    </form>"""
+    ok, fields = probe._looks_like_submit_form(html)
+    assert ok and "siteurl" in fields
+
+
 # --------------------------------------------------------------------------
 # run_execution gates
 # --------------------------------------------------------------------------
