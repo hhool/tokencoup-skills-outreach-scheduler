@@ -118,3 +118,116 @@ def test_classic_directory_class_field_filled_with_category():
     assert klass.value == "Games"
     assert url.value == "https://azgames.example/"
     assert name.value == "Jane Doe"
+
+
+class BodyPage:
+    """Page stub exposing only content() — enough for rejection detection."""
+
+    def __init__(self, html):
+        self._html = html
+
+    def content(self):
+        return self._html
+
+
+def test_validation_error_after_submit_reads_as_rejection():
+    """launchingnext: required radio groups left blank re-render the form with
+    an inline error at HTTP 200 — that must not be recorded as submitted."""
+    page = BodyPage("<html><body><form><input name='startupname'>"
+                    "<p class='error'>Please select a valid option.</p>"
+                    "</form></body></html>")
+    assert cua._rejection_reason(page)
+
+
+def test_success_copy_never_reads_as_rejection():
+    page = BodyPage("<html><body>Thanks, your submission has been received."
+                    "</body></html>")
+    assert cua._rejection_reason(page) == ""
+
+
+def test_plain_page_without_signals_is_not_a_rejection():
+    page = BodyPage("<html><body><h1>Launching Next</h1><p>Submit your "
+                    "project below.</p></body></html>")
+    assert cua._rejection_reason(page) == ""
+
+
+class RadioInput(FakeInput):
+    def __init__(self, name, value):
+        super().__init__(name, typ="radio")
+        self._value = value
+        self.checked = False
+
+    def get_attribute(self, key):
+        if key == "value":
+            return self._value
+        return super().get_attribute(key)
+
+    def check(self):
+        self.checked = True
+
+
+class RadioForm:
+    def __init__(self, inputs):
+        self._in = inputs
+
+    def query_selector_all(self, sel):
+        return self._in if sel == "input" else []
+
+
+def test_honest_radio_option_is_chosen():
+    """launchingnext requires funding + marketing budget; the honest answer is
+    the 'none'/'$0' option, never an invented figure."""
+    funding_none = RadioInput("funding", "0")
+    funding_funded = RadioInput("funding", "3")
+    budget_zero = RadioInput("marketing_budget", "$0")
+    budget_big = RadioInput("marketing_budget", "$5,000 - $15,000")
+    form = RadioForm([funding_funded, funding_none, budget_big, budget_zero])
+
+    picked, left = cua._fill_radios(None, form=form)
+    assert picked == 2 and left == []
+    assert funding_none.checked and budget_zero.checked
+    assert not funding_funded.checked and not budget_big.checked
+
+
+def test_yes_no_group_is_never_guessed():
+    """A group without a none/$0/free option must stay blank for a human."""
+    yes = RadioInput("are_you_owner", "yes")
+    no = RadioInput("are_you_owner", "no")
+    form = RadioForm([yes, no])
+    picked, left = cua._fill_radios(None, form=form)
+    assert picked == 0 and left == ["are_you_owner"]
+    assert not yes.checked and not no.checked
+
+
+class LabelInput(FakeInput):
+    """Text input that can report its <label> text, like a real DOM node."""
+
+    def __init__(self, name, label=""):
+        super().__init__(name)
+        self._label = label
+
+    def evaluate(self, _expr):
+        return self._label
+
+
+def test_arithmetic_gate_is_answered_from_its_label():
+    """launchingnext asks 'Quick Check: What is 2+3?' as a required field."""
+    math = LabelInput("math", "Quick Check: What is 2+3?")
+    page = FakePage([math])
+    assert cua._fill_form(page, CTX, "https://www.launchingnext.com/submit/")
+    assert math.value == "5"
+
+
+def test_arith_answer_parsing():
+    assert cua._arith_answer("What is 7 + 4?") == 11
+    assert cua._arith_answer("what is 9-2") == 7
+    assert cua._arith_answer("Are you human?") is None
+
+
+def test_user_field_gets_a_person_or_site_name():
+    """`user` ("Your Name") matched none of the old branches and stayed blank,
+    which the form then rejected."""
+    user = LabelInput("user", "Your Name")
+    page = FakePage([user])
+    assert cua._fill_form(page, CTX, "https://dir.example")
+    assert user.value == "Jane Doe"

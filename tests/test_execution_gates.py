@@ -418,3 +418,13 @@ def test_mail_gate_rejects_domain_as_sender():
         row, {"category": "browser-games", "sender_name": "***REMOVED-PRIVATE-DOMAIN***"},
         "Hi")
     assert "domain, not a person" in reason
+
+
+def test_turnstile_detected_from_widget_field_name():
+    """betalist.com/submissions/new ships `cf_turnstile_widget` as a form
+    field — invisible in markup but it IS a captcha gate."""
+    html = """<form action="/submissions">
+      <input name="submission[startup_attributes][website_url]">
+      <input name="email"><input type="hidden" name="cf_turnstile_widget">
+    </form>"""
+    assert probe._detect_captcha(html) == "turnstile"

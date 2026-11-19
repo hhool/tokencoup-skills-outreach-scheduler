@@ -49,7 +49,9 @@ FORM_ACTION_RE = re.compile(r"action\s*=\s*[\"']([^\"']*)[\"']", re.I)
 CAPTCHA_MARKERS: list[tuple[str, tuple[str, ...]]] = [
     ("recaptcha_v3", ("recaptcha/api.js?render=", "grecaptcha.execute")),
     ("recaptcha_v2", ("sitekey", "g-recaptcha", "recaptcha/api.js")),
-    ("turnstile", ("challenges.cloudflare.com/turnstile", "cf-turnstile")),
+    ("turnstile", ("challenges.cloudflare.com/turnstile", "cf-turnstile",
+                   "cf_turnstile_widget", "cf-turnstile-response",
+                   "turnstile_widget")),
     ("hcaptcha", ("h-captcha", "hcaptcha.com/1/api.js")),
     ("email_code", ("confirmation code", "verification code sent")),
 ]

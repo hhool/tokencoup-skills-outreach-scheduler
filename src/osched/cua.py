@@ -19,6 +19,7 @@ repeated failures auto-downgrade the domain to the human queue.
 from __future__ import annotations
 
 import json
+import re
 import time
 
 from .db import note_with_landing
@@ -135,7 +136,16 @@ def _fill_form(page, ctx: dict, entry_url: str, form=None) -> bool:
                 continue
             # Most-specific patterns first: a field named site_title must
             # not be captured by the url/site branch.
-            if any(k in name for k in ("title", "name", "author", "nom")):
+            if name in ARITH_FIELDS:
+                answer = _arith_answer(_label_text(handle))
+                if answer is not None:
+                    handle.fill(str(answer)); filled += 1
+            elif name in NAME_FIELDS:
+                who = (ctx.get("sender_name") or "").strip()
+                if not who or ("." in who and "@" not in who):
+                    who = ctx.get("site_name") or ctx["title"]
+                handle.fill(who[:200]); filled += 1
+            elif any(k in name for k in ("title", "name", "author", "nom")):
                 # "Nom" (French) and "name" both carry the person's name.
                 # A domain used as sender_name looks automated — use the
                 # human name when configured, else a neutral site-derived
@@ -162,6 +172,90 @@ def _fill_form(page, ctx: dict, entry_url: str, form=None) -> bool:
         except Exception:
             continue
     return filled > 0
+
+
+# Options that claim nothing: a form asking "funding?" / "budget?" is answered
+# honestly with the free/none option rather than an invented figure. Bare "no"
+# is deliberately absent — a yes/no group must not be answered by guesswork.
+HONEST_OPTION_RE = re.compile(
+    r"^\s*(none|none of these|none of the above|not applicable|n/a|na|"
+    r"\$?0|free|free tier|other|zero cost|no budget)\s*$", re.I)
+
+
+def _fill_radios(page, form=None) -> tuple[int, list[str]]:
+    """Tick the honest option in each radio group; report groups left blank.
+
+    launchingnext asks funding + marketing budget as required radios. Leaving
+    them blank re-rendered the form with "Please check..." at HTTP 200 — a
+    rejection, not a submission. Only none/$0/free/other options are chosen.
+    """
+    groups: dict[str, list] = {}
+    scope = (form.query_selector_all("input") if form
+             else page.query_selector_all("form input"))
+    for handle in scope:
+        try:
+            if (handle.get_attribute("type") or "").lower() != "radio":
+                continue
+            name = handle.get_attribute("name") or ""
+            if not name:
+                continue
+            groups.setdefault(name, []).append(handle)
+        except Exception:
+            continue
+
+    picked, left = 0, []
+    for name, handles in groups.items():
+        chosen = None
+        for handle in handles:
+            try:
+                value = (handle.get_attribute("value") or "").strip()
+            except Exception:
+                continue
+            if HONEST_OPTION_RE.match(value):
+                chosen = handle
+                break
+        if chosen is None:
+            left.append(name)
+            continue
+        try:
+            chosen.check()
+            picked += 1
+        except Exception:
+            left.append(name)
+    return picked, left
+
+
+ARITH_RE = re.compile(r"(\d+)\s*([+\-x×*])\s*(\d+)")
+NAME_FIELDS = {"user", "yourname", "your_name", "fullname", "full_name",
+               "contact_name", "submitter", "submitted_by"}
+# Old-school directories gate spam with a plain arithmetic question ("Quick
+# check: what is 2+3?"). It is a form field, not a vendor captcha: answer it
+# from the label instead of burning a human handoff.
+ARITH_FIELDS = {"math", "sum", "answer", "captcha_answer", "verify", "check",
+                "human_check", "antispam", "spam_check"}
+
+
+def _arith_answer(text: str) -> int | None:
+    """Solve a bare `a op b` quoted in a field label; None if absent."""
+    m = ARITH_RE.search(text or "")
+    if not m:
+        return None
+    a, op, b = int(m.group(1)), m.group(2), int(m.group(3))
+    if op == "+":
+        return a + b
+    if op == "-":
+        return a - b
+    return a * b
+
+
+def _label_text(handle) -> str:
+    """Text of the input's <label> (empty when the stub/page cannot say)."""
+    try:
+        return handle.evaluate(
+            "el => (el.labels && el.labels.length) ? el.labels[0].innerText : ''"
+        ) or ""
+    except Exception:
+        return ""
 
 
 def _click_captcha(page, captcha: str) -> str:
@@ -244,6 +338,24 @@ def _looks_successful(page) -> bool:
         return False
 
 
+def _rejection_reason(page) -> str:
+    """Copy that proves the form refused the submission (empty when unsure).
+
+    A rejected submit usually re-renders the same page with an inline error at
+    HTTP 200 — the exact shape that made HTTP-only "submitted" verdicts lie.
+    Reuses probe.copy_verdict so one keyword set governs both channels.
+    """
+    try:
+        body = page.content()
+    except Exception:
+        return ""
+    from .probe import copy_verdict        # local import: probe stays optional
+    verdict = copy_verdict(body)
+    if verdict.get("success") or verdict.get("already"):
+        return ""
+    return (verdict.get("failure") or "")[:120]
+
+
 def _execute_one(page, row, ctx: dict) -> dict:
     """Run one plan row in the live browser. Returns the outcome dict."""
     entry = row["entry_url"] or row["url"]
@@ -264,6 +376,14 @@ def _execute_one(page, row, ctx: dict) -> dict:
         return {"state": "human", "note": "no fillable form fields",
                 "secs": round(time.time() - started, 1)}
 
+    # Required radio groups (funding, budget, "which of these describes you")
+    # block the submit until answered. Answer only the honest option; groups
+    # without one stay blank and are named in the note so a rejection is
+    # diagnosable instead of looking like a mystery.
+    radios_picked, radios_left = _fill_radios(page, form=form)
+    radio_note = (f"radio groups left blank: {','.join(radios_left)}"
+                  if radios_left else "")
+
     if not _submit(page, form=form):
         return {"state": "human", "note": "no submit control found",
                 "secs": round(time.time() - started, 1)}
@@ -271,16 +391,28 @@ def _execute_one(page, row, ctx: dict) -> dict:
     page.wait_for_timeout(2500)
     ok = _looks_successful(page)
     end_url = page.url
-    # A 2xx form submit with no success copy still goes to `submitted` —
-    # verify is the authority on whether the link actually landed. But record
-    # the marker and landing URL honestly so a false success is diagnosable
-    # instead of silently trusted.
+    # A validation error re-renders at HTTP 200. Calling that `submitted` is
+    # how silent rejections become fake ledger rows, so a detected rejection
+    # goes to `human` with the reason attached.
+    rejected = "" if ok else _rejection_reason(page)
+    if rejected:
+        return {"state": "human",
+                "note": f"form rejected: {rejected}" +
+                        (f" ({radio_note})" if radio_note else ""),
+                "success_marker": False,
+                "landing_url": end_url, "captcha_action": action,
+                "secs": round(time.time() - started, 1)}
+    # No success copy and no rejection copy: still `submitted` — verify is the
+    # authority on whether the link landed. Record the marker honestly so a
+    # false success stays diagnosable instead of silently trusted.
     return {"state": "submitted",
             "note": ("success page detected" if ok
-                     else "submitted (no success marker; verify manually)"),
+                     else "submitted (no success marker; verify manually)") +
+                    (f" [{radio_note}]" if radio_note else ""),
             "success_marker": bool(ok),
             "landing_url": end_url,
             "captcha_action": action,
+            "radios_picked": radios_picked,
             "secs": round(time.time() - started, 1)}
 
 

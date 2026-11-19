@@ -129,6 +129,11 @@ wave-3 human queue. The curated ledger the SEO workbench keeps per site
 </tr>
 <tr>
 <td>verdict</td>
+<td>after submit, rejection copy on the re-rendered page -&gt; <code>human</code> (reason recorded)</td>
+<td>a validation error comes back at HTTP 200; calling that <code>submitted</code> is how silent rejections became fake ledger rows</td>
+</tr>
+<tr>
+<td>verdict</td>
 <td>HTTP 2xx alone is never <code>submitted</code></td>
 <td>POST responses are scanned for success / failure / already-listed copy (scripts stripped) and for a re-rendered submit form; ambiguous 2xx goes to <code>human</code>, silent re-render goes to <code>human</code>, no signals at all trusts 2xx</td>
 </tr>
@@ -366,6 +371,11 @@ wordpress.com、reddit、tumblr。这些要「开户 + 发文」，不是表单�
 <td>CUA 优先</td>
 <td><code>delivery: {cua_primary: true}</code> 把 form 计划改走浏览器通道</td>
 <td>窗口 1 实证：两个可静态提交目标全部静默拒绝（表单重渲染；JS 填充隐藏字段 + AJAX 提交）；验证码闸门仍在此开关之上</td>
+</tr>
+<tr>
+<td>判定</td>
+<td>提交后页面若出现拒绝文案 → <code>human</code>（记拒因）</td>
+<td>校验错误同样 200 重渲染，当成 <code>submitted</code> 就是假台账的来源</td>
 </tr>
 <tr>
 <td>判定</td>

@@ -39,6 +39,7 @@ python3 bin/osched.py import-workbench ~/seo/<site>/targets.jsonl [--min-fit 50]
 | 表单 | 实时页面必须存在含 url 类字段的表单 | 登录/注册/搜索/订阅框不是提交表单 |
 | 验证码 | 浏览器类 → `cua`；未知 → `human` | §7.1 分级；缓存的旧验证码不会把无表单页面送进浏览器 |
 | CUA 优先 | `delivery: {cua_primary: true}` 把 form 计划改走浏览器通道 | 窗口 1 实证：两个可静态提交目标全部静默拒绝（表单重渲染；JS 填充隐藏字段 + AJAX 提交）；验证码闸门仍在此开关之上 |
+| 判定 | 提交后页面若出现拒绝文案 → `human`（记拒因） | 校验错误同样 200 重渲染，当成 `submitted` 就是假台账的来源 |
 | 判定 | HTTP 2xx 本身不构成 `submitted` | POST 响应扫描成功/失败/已存在文案（剥离 script）与表单重渲染；带失败文案或重渲染表单的 2xx → `human`，完全无信号才信任 2xx |
 
 ## Register 通道（阶段 1：开户）
