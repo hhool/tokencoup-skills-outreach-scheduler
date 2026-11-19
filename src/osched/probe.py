@@ -76,6 +76,18 @@ CREDENTIAL_FIELD_RE = re.compile(r"(pass|pwd|login|username)", re.I)
 CREDENTIAL_ACTION_RE = re.compile(
     r"(login|log-in|signin|sign-in|sign_in|wp-login|auth/|session/new)", re.I)
 
+# Contact / feedback / newsletter handlers are NOT submission endpoints even
+# when they happen to carry a `URL` text field (pcastuces /soumettre.htm has
+# Nom+E-mail+URL+commentaire but posts to erreur404.asp = contact handler;
+# smoothdirectory posts cdt_contact/cdt_subscribe to admin-post.php). Treating
+# these as listing forms produced a wave of false `submitted` plans.
+CONTACT_ACTION_RE = re.compile(
+    r"(contact|kontakt|erreur|merci|feedback|complain|newsletter|"
+    r"subscribe|mailto)", re.I)
+CONTACT_HIDDEN_RE = re.compile(
+    r"name\s*=\s*['\"](?:action|task|op)['\"][^>]*value\s*=\s*['\"]"
+    r"(?:cdt_contact|cdt_subscribe|contact|subscribe|feedback)", re.I)
+
 
 @dataclass
 class ProbeResult:
@@ -199,6 +211,10 @@ def find_submit_form(html: str) -> tuple[bool, list[str], str]:
         action = action_m.group(1) if action_m else ""
         if action and CREDENTIAL_ACTION_RE.search(action):
             continue        # credential endpoint behind a plain form
+        if action and CONTACT_ACTION_RE.search(action):
+            continue        # contact/feedback handler, not a listing submit
+        if CONTACT_HIDDEN_RE.search(block):
+            continue        # hidden action=cdt_contact / subscribe
         if not any(k in n for n in names for k in URL_FIELD_KEYS):
             continue        # search box, newsletter box, contact form
         return True, fields, action

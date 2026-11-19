@@ -60,6 +60,38 @@ def test_title_only_form_is_not_a_submission_form():
     assert ok is False
 
 
+def test_contact_form_with_url_field_is_not_a_submission_form():
+    """pcastuces /soumettre.htm: Nom+E-mail+URL+commentaire posting to
+    erreur404.asp is a contact handler, not a listing endpoint."""
+    html = """<form action="https://www.pcastuces.com/erreur404.asp">
+      <input name="Nom"><input name="E-mail"><input name="URL">
+      <textarea name="commentaire"></textarea>
+    </form>"""
+    ok, _ = probe._looks_like_submit_form(html)
+    assert ok is False
+
+
+def test_hidden_contact_action_is_not_a_submission_form():
+    """smoothdirectory: website_url+email to admin-post.php with hidden
+    action=cdt_contact is a subscribe widget, not a listing submit."""
+    html = """<form action="/wp-admin/admin-post.php">
+      <input type="hidden" name="action" value="cdt_contact">
+      <input name="website_url"><input name="email">
+    </form>"""
+    ok, _ = probe._looks_like_submit_form(html)
+    assert ok is False
+
+
+def test_real_listing_form_with_contact_words_in_path_still_works():
+    """Guard must not reject a genuine add-site form whose action contains a
+    benign word — only explicit contact/subscribe handlers are excluded."""
+    html = """<form action="/site/submit-listing">
+      <input name="site_url"><input name="title"><input name="email">
+    </form>"""
+    ok, fields = probe._looks_like_submit_form(html)
+    assert ok and "site_url" in fields
+
+
 # --------------------------------------------------------------------------
 # run_execution gates
 # --------------------------------------------------------------------------
