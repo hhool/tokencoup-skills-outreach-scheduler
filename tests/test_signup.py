@@ -57,6 +57,15 @@ def test_captcha_hints():
     assert signup.signup_captcha_hint("<p>hello</p>") == "none"
 
 
+def test_cloudflare_managed_challenge_detected():
+    # alternativeto serves "Just a moment..." with challenges.cloudflare.com
+    # but no literal 'turnstile' string — must still pause the handoff.
+    html = "<title>Just a moment...</title><script src='https://challenges.cloudflare.com/turnstile'></script>"
+    assert signup.signup_captcha_hint(html) == "turnstile"
+    assert signup.signup_captcha_hint("<html>cf_chl_opt={...}</html>") == "turnstile"
+    assert signup.signup_captcha_hint("<title>Just a moment...</title>") == "none"
+
+
 @pytest.fixture()
 def conn(tmp_path):
     c = connect(tmp_path)

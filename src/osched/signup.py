@@ -82,6 +82,12 @@ def signup_captcha_hint(html: str) -> str:
         return "hcaptcha"
     if "turnstile" in low or "cf-turnstile" in low:
         return "turnstile"
+    # Cloudflare managed challenge interstitial ("Just a moment...") carries
+    # no literal 'turnstile' string — it loads challenges.cloudflare.com.
+    # Detect it so --assist actually pauses and hands the page to the human.
+    if ("just a moment" in low and "challenges.cloudflare.com" in low) or \
+            "cf_chl_opt" in low:
+        return "turnstile"
     return "none"
 
 
@@ -294,14 +300,26 @@ def run_signup(conn, cfg: dict, project: dict, *, headless: bool = False,
                                   flush=True)
                             if handoff_mod.wait_for_go(
                                     cfg, dom, timeout=handoff_timeout):
-                                page.wait_for_timeout(1000)
-                                html = page.content()
-                                # A solved turnstile leaves its widget markup
-                                # in the DOM — the .go marker is the human
-                                # attestation, not HTML re-detection.
+                                # The human cleared a Cloudflare/turnstile
+                                # challenge in this browser — the clearance
+                                # cookie now lets navigation proceed. Re-walk
+                                # the signup URLs instead of inspecting the
+                                # challenged page we were parked on.
                                 solved = True
-                                cap = cap_after_handoff(solved, html)
-                                ok, _, _ = find_signup_form(html)
+                                cap = cap_after_handoff(solved, "")
+                                for u in candidates:
+                                    try:
+                                        page.goto(u, timeout=30000,
+                                                  wait_until="domcontentloaded")
+                                        page.wait_for_timeout(2000)
+                                        html = page.content()
+                                        if signup_captcha_hint(html) != "none":
+                                            continue
+                                        ok, _, _ = find_signup_form(html)
+                                        if ok:
+                                            break
+                                    except Exception:  # noqa: BLE001
+                                        continue
                             else:
                                 outcome = {"state": "human",
                                            "note": f"captcha={cap}; handoff "
