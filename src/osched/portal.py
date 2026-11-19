@@ -862,6 +862,13 @@ class PortalHandler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(data)
 
+    def _png(self, raw: bytes) -> None:
+        self.send_response(200)
+        self.send_header("Content-Type", "image/png")
+        self.send_header("Content-Length", str(len(raw)))
+        self.end_headers()
+        self.wfile.write(raw)
+
     def _form(self) -> dict[str, str]:
         length = int(self.headers.get("Content-Length") or 0)
         raw = self.rfile.read(length).decode("utf-8", "replace")
@@ -926,9 +933,19 @@ class PortalHandler(BaseHTTPRequestHandler):
 
     def _page_evidence(self, token: str):
         """Public link receipt — no session, unguessable signed URL."""
+        shot_name = ""
+        if token.endswith("/shot.png"):
+            token, shot_name = token[:-len("/shot.png")], "shot.png"
         plan_id = evidence_mod.parse_token(self.cfg, token)
         if plan_id is None:
             self._html("<h1>Not found</h1>", title="404")
+            return
+        if shot_name:
+            s = evidence_mod.shot(self.conn, plan_id)
+            if s and s.get("png"):
+                self._png(s["png"])
+            else:
+                self._html("<h1>Not found</h1>", title="404")
             return
         body = evidence_mod.render_page(self.conn, self.cfg, plan_id)
         if body is None:

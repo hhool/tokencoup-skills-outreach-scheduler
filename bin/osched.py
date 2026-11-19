@@ -435,6 +435,21 @@ def cmd_evidence(cfg: dict, plan_id: int) -> int:
     return 0
 
 
+def cmd_evidence_shot(cfg: dict, plan_id: int, png_path: str) -> int:
+    """Attach a listing-page screenshot to a plan's public receipt."""
+    from osched.evidence import attach_shot, shot_url_for
+    conn = connect(data_root(cfg))
+    try:
+        res = attach_shot(conn, cfg, plan_id, png_path)
+    except FileNotFoundError:
+        print(f"file not found: {png_path}")
+        return 1
+    print(f"attached: plan #{plan_id}  {res['bytes'] // 1024}KB  "
+          f"sha256={res['sha256'][:16]}…")
+    print(f"shot URL: {shot_url_for(cfg, plan_id)}")
+    return 0
+
+
 def cmd_overview(cfg: dict) -> int:
     """B5 multi-client operations view: one row per project + SLA alerts."""
     conn = connect(data_root(cfg))
@@ -559,6 +574,10 @@ def main(argv: list[str] | None = None) -> int:
     p_ev = sub.add_parser("evidence-url",
                           help="public receipt URL for one plan (B1)")
     p_ev.add_argument("plan_id", type=int)
+    p_evshot = sub.add_parser("evidence-shot",
+                              help="attach a listing screenshot to a receipt")
+    p_evshot.add_argument("plan_id", type=int)
+    p_evshot.add_argument("png", help="path to a PNG file")
     p_crep = sub.add_parser("client-report",
                             help="client-facing periodic report (B2)")
     p_crep.add_argument("domain")
@@ -648,6 +667,8 @@ def main(argv: list[str] | None = None) -> int:
         return cmd_verify(cfg, args.domain, args.days, args.limit)
     if args.cmd == "evidence-url":
         return cmd_evidence(cfg, args.plan_id)
+    if args.cmd == "evidence-shot":
+        return cmd_evidence_shot(cfg, args.plan_id, args.png)
     if args.cmd == "client-report":
         return cmd_client_report(cfg, args.domain, args.days, args.ref,
                                  args.dry_run)

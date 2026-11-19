@@ -302,3 +302,77 @@ def test_no_cfg_means_no_alert_rows(conn, cfg, monkeypatch):
                         lambda t, timeout: (200, "", "<html></html>"))
     verify.check_one(conn, _due_row(conn))
     assert len(_alerts(conn)) == 0
+
+
+# --------------------------------------------------------------------------
+# listing screenshots: attach -> receipt page <img> -> public /shot.png route
+# --------------------------------------------------------------------------
+
+PNG = b"\x89PNG\r\n\x1a\n" + b"fakepngdata" * 20
+
+
+def test_attach_shot_and_page_renders_img(conn, cfg, tmp_path):
+    from osched import evidence
+    plan_id = _seed_plan(conn)
+    p = tmp_path / "listing.png"
+    p.write_bytes(PNG)
+    res = evidence.attach_shot(conn, cfg, plan_id, str(p))
+    assert res["bytes"] == len(PNG)
+
+    page = evidence.render_page(conn, cfg, plan_id)
+    assert "Listing screenshot" in page
+    assert "/shot.png" in page
+    assert "captured " in page
+    # receipt() exposes the shot blob for the portal image route
+    s = evidence.shot(conn, plan_id)
+    assert s["png"] == PNG
+
+
+def test_attach_shot_replaces_previous(conn, cfg, tmp_path):
+    from osched import evidence
+    plan_id = _seed_plan(conn)
+    p1, p2 = tmp_path / "a.png", tmp_path / "b.png"
+    p1.write_bytes(PNG)
+    p2.write_bytes(PNG + b"\x00v2")
+    evidence.attach_shot(conn, cfg, plan_id, str(p1))
+    evidence.attach_shot(conn, cfg, plan_id, str(p2))
+    s = evidence.shot(conn, plan_id)
+    assert s["png"] == PNG + b"\x00v2"
+
+
+def test_portal_serves_shot_png(conn, cfg, tmp_path, monkeypatch):
+    import io
+    from osched import evidence, portal as portal_mod
+    plan_id = _seed_plan(conn)
+    p = tmp_path / "listing.png"
+    p.write_bytes(PNG)
+    evidence.attach_shot(conn, cfg, plan_id, str(p))
+
+    seen = {}
+
+    class FakeHandler(portal_mod.PortalHandler):
+        def __init__(self, path):
+            self.path = path
+            self.conn = conn
+            self.cfg = cfg
+            self.headers = {}
+
+        def send_response(self, code):
+            seen["code"] = code
+
+        def send_header(self, k, v):
+            seen.setdefault("headers", {})[k] = v
+
+        def end_headers(self):
+            pass
+
+        def wfile(self):  # not used; attribute set below
+            pass
+
+    h = FakeHandler(f"/evidence/{evidence.token_for(cfg, plan_id)}/shot.png")
+    buf = io.BytesIO()
+    h.wfile = buf
+    h._page_evidence(f"{evidence.token_for(cfg, plan_id)}/shot.png")
+    assert seen["code"] == 200
+    assert seen["headers"]["Content-Type"] == "image/png"
+    assert PNG in buf.getvalue()

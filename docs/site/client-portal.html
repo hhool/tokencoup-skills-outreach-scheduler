@@ -270,7 +270,11 @@ Tier 4 is a later phase (needs UTM/GSC integration).</p>
 <p>Every live link as a row: target URL, anchor, placement domain, <strong>DR</strong>,
 confirmed date, verify verdict history. This is the invoice-grade
 evidence: each row is a consumed credit with a receipt (link_verify
-timestamp). Filters: period, domain, DR band.</p>
+timestamp). Filters: period, domain, DR band. Each receipt is a public,
+signed page (<code>osched evidence-url &lt;plan&gt;</code>) the client can open without
+logging in: listing URL, anchor, rel, first-live time, the last 12 checks
+with page hashes, and the captured listing screenshot (<code>osched
+evidence-shot &lt;plan&gt; shot.png</code>).</p>
 <h3>Tier 2 — placement quality</h3>
 <ul>
 <li>DR distribution of live placements (buckets: &lt;30 / 30–60 / 60+)</li>
@@ -687,6 +691,9 @@ Google / Facebook OAuth），然后只看两样东西：<strong>额度消耗</st
 <p>每条实链一行：目标 URL、锚文本、落地域名、<strong>DR</strong>、确认日期、verify
 判定史。这是开票级证据：每一行都是一条已消耗额度带凭证（link_verify
 时间戳）。筛选：账期、域名、DR 区间。</p>
+<p>每条凭证是一个免登录的签名公开页（<code>osched evidence-url &lt;plan&gt;</code>）：
+listing 地址、锚文本、rel、首次 live 时间、最近 12 次复检与页面哈希，
+以及已采集的 listing 截图（<code>osched evidence-shot &lt;plan&gt; shot.png</code>）。</p>
 <h3>第 2 层 — 落地质量</h3>
 <ul>
 <li>实链落地 DR 分布（分桶：&lt;30 / 30–60 / 60+）</li>

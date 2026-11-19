@@ -145,6 +145,10 @@ Google / Facebook OAuth），然后只看两样东西：**额度消耗**（套�
 判定史。这是开票级证据：每一行都是一条已消耗额度带凭证（link_verify
 时间戳）。筛选：账期、域名、DR 区间。
 
+每条凭证是一个免登录的签名公开页（`osched evidence-url <plan>`）：
+listing 地址、锚文本、rel、首次 live 时间、最近 12 次复检与页面哈希，
+以及已采集的 listing 截图（`osched evidence-shot <plan> shot.png`）。
+
 ### 第 2 层 — 落地质量
 
 - 实链落地 DR 分布（分桶：<30 / 30–60 / 60+）

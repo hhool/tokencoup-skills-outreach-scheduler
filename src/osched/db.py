@@ -137,6 +137,13 @@ CREATE TABLE IF NOT EXISTS link_check (
 CREATE INDEX IF NOT EXISTS idx_link_check_plan
   ON link_check(plan_id, checked_at);
 
+CREATE TABLE IF NOT EXISTS evidence_shot (
+  plan_id     INTEGER PRIMARY KEY REFERENCES plan(id),
+  png         BLOB NOT NULL,
+  sha256      TEXT NOT NULL,
+  captured_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
 CREATE TABLE IF NOT EXISTS run_log (
   id      INTEGER PRIMARY KEY AUTOINCREMENT,
   ts      TEXT NOT NULL DEFAULT (datetime('now')),
@@ -186,6 +193,13 @@ def _migrate(conn: sqlite3.Connection) -> None:
                        ("page_sha256", "TEXT")):
         if lv_cols and name not in lv_cols:
             conn.execute(f"ALTER TABLE link_verify ADD COLUMN {name} {decl}")
+    # evidence_shot is new in this version; CREATE TABLE IF NOT EXISTS in the
+    # schema covers fresh DBs, this covers DBs initialized before it existed.
+    conn.execute("""CREATE TABLE IF NOT EXISTS evidence_shot (
+                      plan_id     INTEGER PRIMARY KEY REFERENCES plan(id),
+                      png         BLOB NOT NULL,
+                      sha256      TEXT NOT NULL,
+                      captured_at TEXT NOT NULL DEFAULT (datetime('now')))""")
 
 
 def connect(data_root: pathlib.Path) -> sqlite3.Connection:

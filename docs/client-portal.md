@@ -161,7 +161,11 @@ Tier 4 is a later phase (needs UTM/GSC integration).
 Every live link as a row: target URL, anchor, placement domain, **DR**,
 confirmed date, verify verdict history. This is the invoice-grade
 evidence: each row is a consumed credit with a receipt (link_verify
-timestamp). Filters: period, domain, DR band.
+timestamp). Filters: period, domain, DR band. Each receipt is a public,
+signed page (`osched evidence-url <plan>`) the client can open without
+logging in: listing URL, anchor, rel, first-live time, the last 12 checks
+with page hashes, and the captured listing screenshot (`osched
+evidence-shot <plan> shot.png`).
 
 ### Tier 2 — placement quality
 

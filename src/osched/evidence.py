@@ -72,6 +72,36 @@ def url_for(cfg: dict, plan_id: int) -> str:
     return base + path if base else path
 
 
+def attach_shot(conn, cfg: dict, plan_id: int, png_path: str) -> dict:
+    """Attach a listing-page screenshot to a plan's receipt.
+
+    Replaces any previous shot (one current visual per receipt). Returns
+    {plan_id, sha256, bytes} or raises FileNotFoundError on a missing file.
+    """
+    raw = pathlib.Path(png_path).read_bytes()
+    sha = hashlib.sha256(raw).hexdigest()
+    conn.execute(
+        """INSERT INTO evidence_shot(plan_id, png, sha256)
+           VALUES(?,?,?)
+           ON CONFLICT(plan_id) DO UPDATE SET png=excluded.png,
+             sha256=excluded.sha256, captured_at=datetime('now')""",
+        (plan_id, raw, sha))
+    conn.commit()
+    return {"plan_id": plan_id, "sha256": sha, "bytes": len(raw)}
+
+
+def shot(conn, plan_id: int) -> dict | None:
+    """The current screenshot blob for a plan (None when never captured)."""
+    row = conn.execute(
+        "SELECT png, sha256, captured_at FROM evidence_shot WHERE plan_id=?",
+        (plan_id,)).fetchone()
+    return dict(row) if row else None
+
+
+def shot_url_for(cfg: dict, plan_id: int) -> str:
+    return url_for(cfg, plan_id) + "/shot.png"
+
+
 def receipt(conn, cfg: dict, plan_id: int) -> dict | None:
     """All evidence fields for one plan (None if the plan does not exist)."""
     row = conn.execute(
@@ -120,6 +150,7 @@ def receipt(conn, cfg: dict, plan_id: int) -> dict | None:
         "anchor_text": latest["anchor_text"] if latest else "",
         "page_sha256": latest["page_sha256"] if latest else "",
         "url": url_for(cfg, plan_id),
+        "shot": shot(conn, plan_id),
     }
 
 
@@ -145,6 +176,17 @@ def render_page(conn, cfg: dict, plan_id: int) -> str | None:
     sha_show = f"{sha[:16]}…" if sha else "—"
     landing = e(r["landing"]) if r["landing"] else "—"
     entry = e(r["entry_url"]) if r["entry_url"] else "—"
+    shot_sec = ""
+    s = r.get("shot")
+    if s:
+        shot_sec = (
+            f"<h3>Listing screenshot</h3>"
+            f"<img src='{e(shot_url_for(cfg, plan_id))}' "
+            f"alt='listing page screenshot' style='max-width:100%;"
+            f"border:1px solid #ccc'>"
+            f"<p class='muted'>captured {e(s['captured_at'])} · "
+            f"sha256 <code>{e(s['sha256'][:16])}…</code> · "
+            f"{s['png'] and (len(s['png']) // 1024)}KB</p>")
     body = f"""
     <div class='card'>
       <h2>Link receipt — plan #{r['plan_id']}</h2>
@@ -166,6 +208,7 @@ def render_page(conn, cfg: dict, plan_id: int) -> str | None:
       <h3>Check history ({r['checks']} checks)</h3>
       <table><tr><th>checked at</th><th>result</th><th>http</th>
         <th>rel</th></tr>{rows}</table>
+      {shot_sec}
       <p class='muted'>Verify it yourself: open the listing page above and
       look for our link. This receipt is regenerated from the check log at
       request time — the page hash is what the checker actually saw.
