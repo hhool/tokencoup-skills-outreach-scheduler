@@ -352,6 +352,7 @@ Token 权限（实测得出，不是猜的）：
 | 规则 `privacy@linkattest.com` → 运维邮箱 | 已在、已启用、literal 匹配 |
 | 转发目标地址 | **已验证**——CF 接受了指向它的规则 |
 | 外部发往 `privacy@linkattest.com` 的邮件 | CF 的 MX 已接收 |
+| 转发到 `privacy@` | **端到端送达**——已在运维 Gmail 收件箱确认（2026-11-20） |
 | DKIM（`cf2024-1._domainkey`） | **已发布**——RSA-2048，公网 DNS 已核对 |
 
 两条只读命令可以随时复查上面每一项，不写任何东西：

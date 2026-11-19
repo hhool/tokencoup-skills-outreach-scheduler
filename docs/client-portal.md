@@ -394,6 +394,7 @@ Token permissions, verified against the live API rather than assumed:
 | rule `privacy@linkattest.com` → operator mailbox | present, enabled, literal matcher |
 | forward target | **verified** — Cloudflare accepted a rule targeting it |
 | external mail to `privacy@linkattest.com` | accepted by Cloudflare's MX |
+| forwarding to `privacy@` | **delivered end to end** — verified in the operator's Gmail (2026-11-20) |
 | DKIM (`cf2024-1._domainkey`) | **published** — RSA-2048, verified on the public DNS |
 
 Two read-only commands re-check all of that without writing anything:

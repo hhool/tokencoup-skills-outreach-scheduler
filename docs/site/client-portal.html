@@ -594,6 +594,10 @@ python3 tools/setup_email_routing.py --dry-run
 <td>accepted by Cloudflare's MX</td>
 </tr>
 <tr>
+<td>forwarding to <code>privacy@</code></td>
+<td><strong>delivered end to end</strong> — verified in the operator's Gmail (2026-11-20)</td>
+</tr>
+<tr>
 <td>DKIM (<code>cf2024-1._domainkey</code>)</td>
 <td><strong>published</strong> — RSA-2048, verified on the public DNS</td>
 </tr>
@@ -1127,6 +1131,10 @@ python3 tools/setup_email_routing.py --dry-run
 <tr>
 <td>外部发往 <code>privacy@linkattest.com</code> 的邮件</td>
 <td>CF 的 MX 已接收</td>
+</tr>
+<tr>
+<td>转发到 <code>privacy@</code></td>
+<td><strong>端到端送达</strong>——已在运维 Gmail 收件箱确认（2026-11-20）</td>
 </tr>
 <tr>
 <td>DKIM（<code>cf2024-1._domainkey</code>）</td>
