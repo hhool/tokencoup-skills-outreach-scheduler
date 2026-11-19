@@ -40,6 +40,25 @@ Rules enforced by the importer (`src/osched/workbench.py`):
 | cua_primary | `delivery: {cua_primary: true}` sends form plans to the browser channel | window-1 evidence: both submittable static targets silently rejected the POST (re-rendered form; JS-populated hidden field + AJAX submit); the captcha gate stays above this switch |
 | verdict | HTTP 2xx alone is never `submitted` | POST responses are scanned for success / failure / already-listed copy (scripts stripped) and for a re-rendered submit form; ambiguous 2xx goes to `human`, silent re-render goes to `human`, no signals at all trusts 2xx |
 
+## Register channel (stage 1: signup)
+
+The 138 wave1 `register` rows need accounts before any link can be placed.
+The chain has three segments; stage 1 is automated, stages 2-3 reuse the
+existing account ledger:
+
+| segment | tooling | status |
+|---|---|---|
+| 1. signup | `osched register-signup <domain>`: CUA opens the platform (static-first discovery over `/register` `/signup` `/sign-up` `/join`, then CUA walks the same paths), finds the signup form (password + identity fields, login forms rejected), fills identity + generated password, submits | done; captcha or no-form -> `human` |
+| 2. verify mail | `osched mail-verify` (IMAP) extracts activation links/codes -> `account.activation_url` | done (existing) |
+| 3. activate + post | `osched account-activate` (CUA clicks the link); posting with the backlink is stage 2 | activation done; posting pending |
+
+Pilot (2026-11-19, 6 confirmed targets): 0 signed — every big platform gates
+signup with captcha/anti-bot (alternativeto, sitelike = turnstile; youtube,
+tumblr = bot-block/timeout; jasmine, jouwpagina = no reachable form). The
+channel needs the human-in-the-loop mix: CUA navigates, a human solves the
+captcha. Passwords are per-account generated, stored only in the account
+ledger, masked in every output.
+
 ## Live-link alerts (evidence layer)
 
 Every verify pass also runs edge detection over the check series and

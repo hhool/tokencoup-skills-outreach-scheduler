@@ -130,6 +130,42 @@ wave-3 human queue. The curated ledger the SEO workbench keeps per site
 </tr>
 </tbody>
 </table>
+<h2>Register channel (stage 1: signup)</h2>
+<p>The 138 wave1 <code>register</code> rows need accounts before any link can be placed.
+The chain has three segments; stage 1 is automated, stages 2-3 reuse the
+existing account ledger:</p>
+<table>
+<thead>
+<tr>
+<th>segment</th>
+<th>tooling</th>
+<th>status</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>1. signup</td>
+<td><code>osched register-signup &lt;domain&gt;</code>: CUA opens the platform (static-first discovery over <code>/register</code> <code>/signup</code> <code>/sign-up</code> <code>/join</code>, then CUA walks the same paths), finds the signup form (password + identity fields, login forms rejected), fills identity + generated password, submits</td>
+<td>done; captcha or no-form -&gt; <code>human</code></td>
+</tr>
+<tr>
+<td>2. verify mail</td>
+<td><code>osched mail-verify</code> (IMAP) extracts activation links/codes -&gt; <code>account.activation_url</code></td>
+<td>done (existing)</td>
+</tr>
+<tr>
+<td>3. activate + post</td>
+<td><code>osched account-activate</code> (CUA clicks the link); posting with the backlink is stage 2</td>
+<td>activation done; posting pending</td>
+</tr>
+</tbody>
+</table>
+<p>Pilot (2026-11-19, 6 confirmed targets): 0 signed — every big platform gates
+signup with captcha/anti-bot (alternativeto, sitelike = turnstile; youtube,
+tumblr = bot-block/timeout; jasmine, jouwpagina = no reachable form). The
+channel needs the human-in-the-loop mix: CUA navigates, a human solves the
+captcha. Passwords are per-account generated, stored only in the account
+ledger, masked in every output.</p>
 <h2>Live-link alerts (evidence layer)</h2>
 <p>Every verify pass also runs edge detection over the check series and
 emails the ops mailbox (<code>cfg.report.email</code>) — never the client directly;
@@ -310,6 +346,39 @@ wordpress.com、reddit、tumblr。这些要「开户 + 发文」，不是表单�
 </tr>
 </tbody>
 </table>
+<h2>Register 通道（阶段 1：开户）</h2>
+<p>138 条 wave1 <code>register</code> 行必须先有账号才能放链。链条分三段；阶段 1 已自动化，
+二、三段复用既有账号台账：</p>
+<table>
+<thead>
+<tr>
+<th>段</th>
+<th>工具</th>
+<th>状态</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>1. 开户</td>
+<td><code>osched register-signup &lt;domain&gt;</code>：CUA 打开平台（先静态发现 <code>/register</code> <code>/signup</code> <code>/sign-up</code> <code>/join</code>，被挡再由 CUA 走同批路径），识别注册表单（密码 + 身份字段，登录表单拒绝），填身份字段 + 生成密码，提交</td>
+<td>完成；验证码/无表单 → <code>human</code></td>
+</tr>
+<tr>
+<td>2. 验证邮件</td>
+<td><code>osched mail-verify</code>（IMAP）提取激活链接/验证码 → <code>account.activation_url</code></td>
+<td>完成（既有）</td>
+</tr>
+<tr>
+<td>3. 激活 + 发文</td>
+<td><code>osched account-activate</code>（CUA 点击激活链接）；带链发文属阶段 2</td>
+<td>激活已有；发文待建</td>
+</tr>
+</tbody>
+</table>
+<p>试点（2026-11-19，6 个 confirmed 目标）：0 开户成功——大平台开户全部有验证码/反爬
+（alternativeto、sitelike = turnstile；youtube、tumblr = 反爬/超时；jasmine、
+jouwpagina = 无可达表单）。通道需要人机混合：CUA 导航、人工过验证码。密码按账号
+生成，仅存账号台账，所有输出路径均掩码。</p>
 <h2>实链告警（证据层）</h2>
 <p>每次验活同时对检查序列做边沿检测，命中即发运维信箱
 （<code>cfg.report.email</code>）——不直发客户；客户通过周报与证据页感知掉链。</p>

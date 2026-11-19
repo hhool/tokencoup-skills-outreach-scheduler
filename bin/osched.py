@@ -435,6 +435,22 @@ def cmd_evidence(cfg: dict, plan_id: int) -> int:
     return 0
 
 
+def cmd_register_signup(cfg: dict, domain: str, headless: bool,
+                        limit: int) -> int:
+    """CUA auto-signup on confirmed register-type targets without accounts."""
+    from osched import signup
+    conn = connect(data_root(cfg))
+    project = _get_project(cfg, conn, domain)
+    stats = signup.run_signup(conn, cfg, project, headless=headless,
+                              limit=limit)
+    print(f"register-signup[{domain}]: "
+          + json.dumps({k: v for k, v in stats.items() if k != "rows"},
+                       ensure_ascii=False))
+    for r in stats.get("rows", []):
+        print(f"  {r['domain']:<30} {r['state']:<8} {r['note']}")
+    return 0
+
+
 def cmd_alert_test(cfg: dict) -> int:
     """Send one sample alert through the real SMTP path (ops mailbox).
 
@@ -641,6 +657,11 @@ def main(argv: list[str] | None = None) -> int:
     p_aact.add_argument("domain")
     p_aact.add_argument("--headless", action="store_true")
     p_aact.add_argument("--limit", type=int, default=0)
+    p_rsup = sub.add_parser("register-signup",
+                            help="CUA auto-signup on register-type targets")
+    p_rsup.add_argument("domain")
+    p_rsup.add_argument("--headless", action="store_true")
+    p_rsup.add_argument("--limit", type=int, default=0)
     p_prof = sub.add_parser("profile",
                             help="per-domain submittability profile (B4)")
     p_prof.add_argument("--domain", default=None,
@@ -713,6 +734,9 @@ def main(argv: list[str] | None = None) -> int:
     if args.cmd == "account-activate":
         return cmd_account_activate(cfg, args.domain, args.headless,
                                     args.limit)
+    if args.cmd == "register-signup":
+        return cmd_register_signup(cfg, args.domain, args.headless,
+                                   args.limit)
     if args.cmd == "profile":
         return cmd_profile(cfg, args.domain, args.limit)
     if args.cmd == "overview":

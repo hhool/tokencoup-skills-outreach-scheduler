@@ -38,6 +38,22 @@ python3 bin/osched.py import-workbench ~/seo/<site>/targets.jsonl [--min-fit 50]
 | CUA 优先 | `delivery: {cua_primary: true}` 把 form 计划改走浏览器通道 | 窗口 1 实证：两个可静态提交目标全部静默拒绝（表单重渲染；JS 填充隐藏字段 + AJAX 提交）；验证码闸门仍在此开关之上 |
 | 判定 | HTTP 2xx 本身不构成 `submitted` | POST 响应扫描成功/失败/已存在文案（剥离 script）与表单重渲染；带失败文案或重渲染表单的 2xx → `human`，完全无信号才信任 2xx |
 
+## Register 通道（阶段 1：开户）
+
+138 条 wave1 `register` 行必须先有账号才能放链。链条分三段；阶段 1 已自动化，
+二、三段复用既有账号台账：
+
+| 段 | 工具 | 状态 |
+|---|---|---|
+| 1. 开户 | `osched register-signup <domain>`：CUA 打开平台（先静态发现 `/register` `/signup` `/sign-up` `/join`，被挡再由 CUA 走同批路径），识别注册表单（密码 + 身份字段，登录表单拒绝），填身份字段 + 生成密码，提交 | 完成；验证码/无表单 → `human` |
+| 2. 验证邮件 | `osched mail-verify`（IMAP）提取激活链接/验证码 → `account.activation_url` | 完成（既有） |
+| 3. 激活 + 发文 | `osched account-activate`（CUA 点击激活链接）；带链发文属阶段 2 | 激活已有；发文待建 |
+
+试点（2026-11-19，6 个 confirmed 目标）：0 开户成功——大平台开户全部有验证码/反爬
+（alternativeto、sitelike = turnstile；youtube、tumblr = 反爬/超时；jasmine、
+jouwpagina = 无可达表单）。通道需要人机混合：CUA 导航、人工过验证码。密码按账号
+生成，仅存账号台账，所有输出路径均掩码。
+
 ## 实链告警（证据层）
 
 每次验活同时对检查序列做边沿检测，命中即发运维信箱
