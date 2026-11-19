@@ -69,6 +69,17 @@ or unrendered `{{...}}` placeholders. Blocked rows go to `human` with the
 reason in `result_note`; no mail is sent. The first review (2026-11-19)
 rejected two pitch rows aimed at a news daily and a study-abroad agency.
 
+## Live-link verification (evidence layer)
+
+A submitted plan is re-visited after `days_after` (default 3). `verify.check_one`
+resolves the client landing URL from the project domain (durable) — not from
+`result_note`, which executor/cua overwrite on submit — and tries several
+pages (site home/catalogue first, then the submit entry), because an accepted
+link surfaces on the catalogue, not the form we POSTed to. A link found on any
+page wins; `missing` is retried to `MAX_ATTEMPTS` then handed to humans.
+`db.note_with_landing` folds the original landing into every successor note so
+public receipts and the client report keep the delivered URL.
+
 ## Live-link alerts (evidence layer)
 
 Every verify pass also runs edge detection over the check series and

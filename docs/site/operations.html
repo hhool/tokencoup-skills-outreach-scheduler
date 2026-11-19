@@ -178,6 +178,15 @@ placeholder <code>category=general/other/unknown</code>, a domain used as <code>
 or unrendered <code>{{...}}</code> placeholders. Blocked rows go to <code>human</code> with the
 reason in <code>result_note</code>; no mail is sent. The first review (2026-11-19)
 rejected two pitch rows aimed at a news daily and a study-abroad agency.</p>
+<h2>Live-link verification (evidence layer)</h2>
+<p>A submitted plan is re-visited after <code>days_after</code> (default 3). <code>verify.check_one</code>
+resolves the client landing URL from the project domain (durable) — not from
+<code>result_note</code>, which executor/cua overwrite on submit — and tries several
+pages (site home/catalogue first, then the submit entry), because an accepted
+link surfaces on the catalogue, not the form we POSTed to. A link found on any
+page wins; <code>missing</code> is retried to <code>MAX_ATTEMPTS</code> then handed to humans.
+<code>db.note_with_landing</code> folds the original landing into every successor note so
+public receipts and the client report keep the delivered URL.</p>
 <h2>Live-link alerts (evidence layer)</h2>
 <p>Every verify pass also runs edge detection over the check series and
 emails the ops mailbox (<code>cfg.report.email</code>) — never the client directly;
@@ -402,6 +411,13 @@ jouwpagina = 无可达表单）。通道需要人机混合：CUA 导航、人工
 占位、<code>sender_name</code> 是域名、或未渲染的 <code>{{...}}</code>。拦截行转 <code>human</code>，原因写进
 <code>result_note</code>，不发任何邮件。首次审查（2026-11-19）拦下两条发往新闻日报与
 留学中介的 pitch。</p>
+<h2>实链验活（证据层）</h2>
+<p>已提交计划在 <code>days_after</code>（默认 3 天）后复访。<code>verify.check_one</code> 从项目域名
+解析客户落地 URL（持久来源）——不从 <code>result_note</code> 读，因为 executor/cua
+提交时会覆盖它；并尝试多个页面（先站点首页/目录页，再提交入口），因为
+被收录的链接出现在目录页而非我们 POST 的表单页。任一页面命中即 live；
+<code>missing</code> 重试至 <code>MAX_ATTEMPTS</code> 后转人工。<code>db.note_with_landing</code> 把原 landing
+折进每次后续 note，保证公开收据和客户报告保留交付 URL。</p>
 <h2>实链告警（证据层）</h2>
 <p>每次验活同时对检查序列做边沿检测，命中即发运维信箱
 （<code>cfg.report.email</code>）——不直发客户；客户通过周报与证据页感知掉链。</p>

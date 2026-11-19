@@ -63,6 +63,15 @@ jouwpagina = 无可达表单）。通道需要人机混合：CUA 导航、人工
 `result_note`，不发任何邮件。首次审查（2026-11-19）拦下两条发往新闻日报与
 留学中介的 pitch。
 
+## 实链验活（证据层）
+
+已提交计划在 `days_after`（默认 3 天）后复访。`verify.check_one` 从项目域名
+解析客户落地 URL（持久来源）——不从 `result_note` 读，因为 executor/cua
+提交时会覆盖它；并尝试多个页面（先站点首页/目录页，再提交入口），因为
+被收录的链接出现在目录页而非我们 POST 的表单页。任一页面命中即 live；
+`missing` 重试至 `MAX_ATTEMPTS` 后转人工。`db.note_with_landing` 把原 landing
+折进每次后续 note，保证公开收据和客户报告保留交付 URL。
+
 ## 实链告警（证据层）
 
 每次验活同时对检查序列做边沿检测，命中即发运维信箱
