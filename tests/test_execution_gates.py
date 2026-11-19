@@ -420,6 +420,19 @@ def test_mail_gate_rejects_domain_as_sender():
     assert "domain, not a person" in reason
 
 
+def test_japanese_and_korean_submit_links_are_discovered():
+    """The ledger carries old JP/KR link directories; their add-site links are
+    「サイト登録」/「リンク集」, which the latin-only pattern missed."""
+    html = """<html><body>
+      <a href="/entry/form.html">サイト登録</a>
+      <a href="/links/">リンク集</a>
+      <a href="/add.html">사이트 등록</a>
+    </body></html>"""
+    urls = probe.find_entry_candidates(html, "https://dir.example/", 5)
+    assert any("entry" in u for u in urls)
+    assert any("/links/" in u for u in urls)
+
+
 def test_turnstile_detected_from_widget_field_name():
     """betalist.com/submissions/new ships `cf_turnstile_widget` as a form
     field — invisible in markup but it IS a captcha gate."""

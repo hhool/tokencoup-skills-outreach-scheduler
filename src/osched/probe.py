@@ -33,6 +33,7 @@ SUBMIT_LINK_RE = re.compile(
     r"|aggiungi|inserisci"                               # it
     r"|hinzufuegen|hinzuf\u00fcgen|eintragen"            # de
     r"|melunak|ekle"                                     # tr
+    r"|登録|リンク集|投稿|追加|掲載|사이트\s*등록|등록"      # ja / ko
     r")",
     re.I,
 )
