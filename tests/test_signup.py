@@ -88,3 +88,31 @@ def test_candidates_exclude_unconfirmed(conn):
 def test_password_generation():
     p1, p2 = signup.gen_password(), signup.gen_password()
     assert p1 != p2 and len(p1) >= 16
+
+
+def test_site_root_strips_deep_entry_path():
+    assert (signup.site_root("https://alternativeto.net/manage/add-app")
+            == "https://alternativeto.net")
+    assert signup.site_root("sitelike.org/add-site") == "https://sitelike.org"
+
+
+def test_signup_candidates_use_site_root_not_deep_entry():
+    urls = signup.signup_candidate_urls(
+        "https://alternativeto.net/manage/add-app", "https://alternativeto.net/")
+    # static discovery returned only the root index -> fall through to the
+    # entry + root-relative signup paths; never /manage/add-app/register
+    assert urls[0] == "https://alternativeto.net/manage/add-app"
+    assert "https://alternativeto.net/register" in urls
+    assert not any("/manage/add-app/" in u for u in urls)
+
+
+def test_discovered_signup_page_wins():
+    urls = signup.signup_candidate_urls(
+        "https://sitelike.org/add-site", "https://sitelike.org/signup")
+    assert urls == ["https://sitelike.org/signup"]
+
+
+def test_cap_after_handoff_clears_on_solve():
+    # widget markup still present, but .go means the human solved it
+    assert signup.cap_after_handoff(True, "cf-turnstile script") == "none"
+    assert signup.cap_after_handoff(False, "cf-turnstile script") == "turnstile"

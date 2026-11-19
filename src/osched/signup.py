@@ -21,6 +21,7 @@ from __future__ import annotations
 import json
 import re
 import secrets
+from urllib.parse import urlsplit
 
 try:
     from playwright.sync_api import sync_playwright
@@ -87,6 +88,41 @@ def signup_captcha_hint(html: str) -> str:
 def gen_password() -> str:
     # url-safe, 16 chars: strong enough, no quoting issues in web forms
     return secrets.token_urlsafe(12)
+
+
+def site_root(url: str) -> str:
+    """scheme://netloc for a URL — signup paths hang off this, not a deep entry.
+
+    The workbench often stores a deep entry_url (e.g. alternativeto's
+    /manage/add-app). Appending /register to that path produces a 404; every
+    platform exposes signup at the site root. Normalising first is what lets
+    the CUA walk reach a real signup form.
+    """
+    p = urlsplit(url if "://" in url else "https://" + url)
+    return f"{p.scheme}://{p.netloc}"
+
+
+def signup_candidate_urls(entry_url: str, discovered: str = "") -> list[str]:
+    """Ordered URLs the CUA walks to find a signup form.
+
+    A confirmed `discovered` page wins; otherwise try the stored entry then
+    the common signup paths on the SITE ROOT (never on a deep entry path).
+    """
+    root = site_root(entry_url)
+    root_index = root + "/"
+    if discovered and discovered != root_index:
+        return [discovered]
+    return [entry_url.rstrip("/")] + [root + c for c in SIGNUP_PATH_CANDIDATES]
+
+
+def cap_after_handoff(solved: bool, html: str) -> str:
+    """Captcha verdict after the operator's .go marker.
+
+    A solved turnstile leaves its widget markup in the DOM, so re-detecting
+    from HTML would re-gate forever. The marker is the human attestation:
+    once solved, report 'none' and let the flow find the form and fill it.
+    """
+    return "none" if solved else signup_captcha_hint(html)
 
 
 # --------------------------------------------------------------------------
@@ -226,16 +262,15 @@ def run_signup(conn, cfg: dict, project: dict, *, headless: bool = False,
                 ctx["username"] = (ctx.get("sender_name") or
                                    project["domain"].split(".")[0])
                 base_url = (row["entry_url"] or row["url"]).rstrip("/")
-                # candidate pages: static discovery first (cheap); when it
-                # can't confirm a form (bot-blocked, JS-only), the CUA walks
-                # entry + common paths until one renders a signup form.
-                discovered = _discover_signup_url(base_url + "/")
-                candidates = ([discovered] if discovered != base_url + "/"
-                              else [base_url] + [base_url + c for c in
-                                                 SIGNUP_PATH_CANDIDATES])
+                # static discovery first (cheap); when it can't confirm a form
+                # (bot-blocked/JS-only) the CUA walks entry + site-root signup
+                # paths until one renders a form.
+                root = site_root(base_url)
+                discovered = _discover_signup_url(root + "/")
+                candidates = signup_candidate_urls(base_url, discovered)
                 outcome = {"state": "human", "note": "not attempted"}
                 try:
-                    html, ok, cap = "", False, "none"
+                    html, ok, cap, solved = "", False, "none", False
                     for u in candidates:
                         page.goto(u, timeout=30000,
                                   wait_until="domcontentloaded")
@@ -261,19 +296,25 @@ def run_signup(conn, cfg: dict, project: dict, *, headless: bool = False,
                                     cfg, dom, timeout=handoff_timeout):
                                 page.wait_for_timeout(1000)
                                 html = page.content()
-                                cap = signup_captcha_hint(html)
+                                # A solved turnstile leaves its widget markup
+                                # in the DOM — the .go marker is the human
+                                # attestation, not HTML re-detection.
+                                solved = True
+                                cap = cap_after_handoff(solved, html)
                                 ok, _, _ = find_signup_form(html)
                             else:
                                 outcome = {"state": "human",
                                            "note": f"captcha={cap}; handoff "
                                                    "timed out"}
-                        if cap != "none":
+                        if not solved and cap != "none":
                             outcome = {"state": "human",
                                        "note": f"captcha={cap} -> manual signup"}
                     if cap == "none" and not ok:
                         outcome = {"state": "human",
                                    "note": "no signup form found "
                                            "(entry + common paths)"}
+                    elif cap != "none" and not solved:
+                        pass   # captcha block above already set the human outcome
                     else:
                         pw_form = gen_password()
                         filled = _fill_signup(page, ctx, pw_form)
