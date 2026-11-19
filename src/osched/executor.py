@@ -33,6 +33,7 @@ from email.mime.text import MIMEText
 from email.utils import formataddr, formatdate, make_msgid
 
 from . import probe as probe_mod
+from .db import note_with_landing
 from .config import ConfigError, require_env_key
 from .matching import landing_url
 from .report import _require_any
@@ -431,6 +432,7 @@ def _finish(conn, plan_id: int, outcome: dict, *, dry_run: bool) -> None:
     # Keep "state" in the dict: the caller logs it right after this call.
     state = outcome["state"]
     note = {k: v for k, v in outcome.items() if k != "state"}
+    note = note_with_landing(conn, plan_id, note)
     conn.execute(
         """
         UPDATE plan SET state=?, executed_at=datetime('now'),

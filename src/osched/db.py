@@ -6,6 +6,7 @@ idempotently; all DB files live under data_root (gitignored, never committed).
 """
 from __future__ import annotations
 
+import json
 import pathlib
 import sqlite3
 
@@ -211,3 +212,27 @@ def connect(data_root: pathlib.Path) -> sqlite3.Connection:
     conn.executescript(SCHEMA)
     _migrate(conn)
     return conn
+
+
+def note_with_landing(conn: sqlite3.Connection, plan_id: int,
+                      note: dict) -> dict:
+    """Fold the plan's original landing URL into a successor result_note.
+
+    scheduler stores `landing` in result_note at plan time; executor/cua
+    overwrite that note on submit. Preserve the landing key so verify and the
+    public evidence receipt can still resolve the client's delivered URL.
+    Never raises: a malformed old note simply yields no carried-over landing.
+    """
+    out = dict(note)
+    if out.get("landing"):
+        return out
+    try:
+        row = conn.execute("SELECT result_note FROM plan WHERE id=?",
+                           (plan_id,)).fetchone()
+        if row:
+            old = json.loads(row["result_note"] or "{}")
+            if isinstance(old, dict) and old.get("landing"):
+                out["landing"] = old["landing"]
+    except (ValueError, sqlite3.Error):  # noqa: BLE001
+        pass
+    return out

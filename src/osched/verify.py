@@ -67,6 +67,33 @@ def _landing(plan_note: str, fallback: str) -> str:
         return fallback
 
 
+def _project_landing(row) -> str:
+    """Canonical landing from the project domain, not the mutable plan note.
+
+    executor/cua overwrite result_note on submit and historically dropped the
+    `landing` key — verifying off that note then searched for an empty string
+    and every plan went `missing` forever. The project's own domain is the
+    durable source (scheduler.landing_url falls back to it too).
+    """
+    keys = row.keys() if hasattr(row, "keys") else []
+    dom = (row["project_domain"] if "project_domain" in keys else "") or ""
+    return f"https://{dom}/" if dom else ""
+
+
+def _verify_targets(row) -> list[str]:
+    """Where a submitted link can appear: site home/catalogue first, then the
+    entry (submit) URL. The submit form itself rarely lists accepted links,
+    so checking only entry_url used to produce false `missing` verdicts.
+    """
+    keys = row.keys() if hasattr(row, "keys") else []
+    out: list[str] = []
+    for k in ("url", "entry_url"):
+        u = (row[k] if k in keys else "") or ""
+        if u and u not in out:
+            out.append(u)
+    return out
+
+
 def _page_contains_link(html: str, landing: str) -> bool:
     """Landing present on page: raw substring, URL-encoded variant, or any
     href carrying our host (covers /out?to=... redirect styles)."""
@@ -129,24 +156,40 @@ def due_verify(conn, project_id: int | None = None, *, days_after: int = 3,
 
 
 def check_one(conn, row, cfg: dict | None = None) -> dict:
-    """Re-visit one plan's directory page and look for the landing URL."""
-    landing = _landing(row["result_note"], "")
-    target = row["entry_url"] or row["url"]
-    status, _final, html = probe_mod._fetch(target, timeout=15.0)
+    """Re-visit a plan's directory pages and look for the landing URL.
 
-    if status in (403, 412, 429):
-        outcome = {"result": "bot-blocked", "http": status,
-                   "note": "anti-bot; retry later"}
-    elif status == 0:
-        outcome = {"result": "unreachable", "http": 0,
-                   "note": "fetch error; retry later"}
-    elif status >= 400:
-        outcome = {"result": "unreachable", "http": status,
-                   "note": f"http {status}"}
-    elif html and _page_contains_link(html, landing):
-        outcome = {"result": "live", "http": status, "note": "landing found"}
-    else:
-        outcome = {"result": "missing", "http": status,
+    Landing comes from the project domain (durable), and several pages are
+    tried (site home/catalogue before the submit form) because accepted links
+    surface on the catalogue, not the form we POSTed to.
+    """
+    landing = (_landing(row["result_note"], "")
+               or _project_landing(row))
+    targets = _verify_targets(row)
+
+    # Try every candidate; a link found on any page wins. Keep the strongest
+    # negative for the note if none is live.
+    status, html = 0, ""
+    outcome = {"result": "missing", "http": 0, "note": "no candidate pages"}
+    for target in targets:
+        st, _final, page = probe_mod._fetch(target, timeout=15.0)
+        status, html = st, page
+        if st in (403, 412, 429):
+            outcome = {"result": "bot-blocked", "http": st,
+                       "note": "anti-bot; retry later"}
+            continue
+        if st == 0:
+            outcome = {"result": "unreachable", "http": 0,
+                       "note": "fetch error; retry later"}
+            continue
+        if st >= 400:
+            outcome = {"result": "unreachable", "http": st,
+                       "note": f"http {st}"}
+            continue
+        if page and landing and _page_contains_link(page, landing):
+            outcome = {"result": "live", "http": st,
+                       "note": f"landing found on {target}"}
+            break
+        outcome = {"result": "missing", "http": st,
                    "note": "landing not on page"}
 
     anchor = {}

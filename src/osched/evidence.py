@@ -122,6 +122,8 @@ def receipt(conn, cfg: dict, plan_id: int) -> dict | None:
                    .get("landing") or "")
     except Exception:  # noqa: BLE001 — receipt never crashes on a bad note
         pass
+    if not landing and row["project"]:
+        landing = f"https://{row['project']}/"
     history = conn.execute(
         """SELECT checked_at, result, http_status, rel, anchor_text,
                   anchor_href, page_sha256

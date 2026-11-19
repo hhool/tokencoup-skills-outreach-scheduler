@@ -21,6 +21,8 @@ from __future__ import annotations
 import json
 import time
 
+from .db import note_with_landing
+
 # Plan rows eligible for the CUA run: state='cua' only. The HTTP executor
 # already routed them here; the CUA run is their second and final stop
 # before the human queue.
@@ -248,12 +250,13 @@ def run_cua(conn, cfg: dict, project: dict, *, headless: bool = False,
                              success_count=success_count+1,
                              last_verified=datetime('now')
                            WHERE domain=?""", (dom,))
+                cua_note = note_with_landing(conn, row["id"], outcome)
                 conn.execute(
                     """UPDATE plan SET state=?, executed_at=datetime('now'),
                          captcha_solved=?, result_note=? WHERE id=?""",
                     (outcome["state"],
                      1 if outcome["state"] == "submitted" else 0,
-                     json.dumps(outcome, ensure_ascii=False), row["id"]))
+                     json.dumps(cua_note, ensure_ascii=False), row["id"]))
                 conn.execute(
                     "INSERT INTO run_log(action, target, result, note) "
                     "VALUES('cua', ?, ?, ?)",

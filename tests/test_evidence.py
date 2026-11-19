@@ -64,6 +64,71 @@ def _due_row(conn):
     return rows[0]
 
 
+def _seed_plan_no_landing(conn):
+    """Real-world state: executor overwrote result_note and dropped landing;
+    the link now lives on the site home page, not the submit form."""
+    cur = conn.execute(
+        """INSERT INTO pool(url, domain, entry_url, source_kind,
+                            source_file, source_row)
+           VALUES('https://dir.example/', 'dir.example',
+                  'https://dir.example/submit', 'test', 't', 2)""")
+    pool_id = cur.lastrowid
+    cur = conn.execute("INSERT INTO project(domain) VALUES('client.example')")
+    project_id = cur.lastrowid
+    cur = conn.execute(
+        "INSERT INTO match(project_id, pool_id, state) VALUES(?,?, 'confirmed')",
+        (project_id, pool_id))
+    match_id = cur.lastrowid
+    cur = conn.execute(
+        """INSERT INTO plan(project_id, match_id, scheduled_date, channel,
+                            state, executed_at, result_note)
+           VALUES(?,?,?,?, 'submitted', datetime('now','-4 days'), ?)""",
+        (project_id, match_id, "2026-11-15", "form",
+         json.dumps({"state": "submitted", "secs": 14.3})))  # no landing!
+    conn.commit()
+    return cur.lastrowid
+
+
+def test_verify_uses_project_domain_when_note_drops_landing(conn, monkeypatch):
+    """Regression: landing lost on submit never means permanent `missing`."""
+    plan_id = _seed_plan_no_landing(conn)
+    seen = []
+
+    def fake_fetch(target, timeout):
+        seen.append(target)
+        # submit form has no link; home page does
+        if target.endswith("/submit"):
+            return 200, "", "<html>submit form</html>"
+        return 200, "", LISTING_HTML
+
+    monkeypatch.setattr(probe, "_fetch", fake_fetch)
+    outcome = verify.check_one(conn, _due_row(conn))
+    assert outcome["result"] == "live", outcome
+    # home page tried first and wins; submit form never needs fetching
+    assert seen == ["https://dir.example/"], seen
+    lv = conn.execute("SELECT * FROM link_verify WHERE plan_id=?",
+                      (plan_id,)).fetchone()
+    assert lv["result"] == "live" and lv["rel"] == "nofollow sponsored"
+
+
+def test_note_with_landing_preserves_on_overwrite(conn):
+    """executor/cua overwrite result_note; landing must survive."""
+    from osched.db import note_with_landing
+    plan_id = _seed_plan(conn)  # note has landing https://client.example
+    new = note_with_landing(conn, plan_id,
+                            {"state": "submitted", "secs": 9.1})
+    assert new["landing"] == "https://client.example"
+    assert new["state"] == "submitted"
+
+
+def test_note_with_landing_explicit_wins(conn):
+    from osched.db import note_with_landing
+    plan_id = _seed_plan(conn)
+    new = note_with_landing(conn, plan_id,
+                            {"landing": "https://override.example"})
+    assert new["landing"] == "https://override.example"
+
+
 # --------------------------------------------------------------------------
 # verify.check_one writes the time series
 # --------------------------------------------------------------------------
