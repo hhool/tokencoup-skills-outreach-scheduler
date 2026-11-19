@@ -58,6 +58,34 @@ def test_dropped_targets_are_never_imported(conn, tmp_path):
     assert conn.execute("SELECT COUNT(*) FROM pool").fetchone()[0] == 0
 
 
+def test_ledger_drop_reaches_the_pool(conn, tmp_path):
+    """A ledger drop must stop delivery: leaving the pool row `active` kept
+    queueing submissions to a target the operator had already rejected."""
+    conn.execute("""INSERT INTO pool(url, domain, source_kind, source_file,
+        source_row, submit_type, wave, probe_state)
+        VALUES('http://contact.example/','contact.example','wdc','f',0,
+               'listing',1,'probed')""")
+    conn.commit()
+    path = _ledger(tmp_path, [_t(domain="contact.example",
+                                 url="http://contact.example/",
+                                 status="dropped", submit_type="unknown")])
+    stats = import_targets(conn, path)
+    assert stats["dropped"] == 1
+    assert conn.execute("SELECT status FROM pool WHERE domain='contact.example'"
+                        ).fetchone()["status"] == "dropped"
+
+
+def test_ledger_drop_is_idempotent(conn, tmp_path):
+    conn.execute("""INSERT INTO pool(url, domain, source_kind, source_file,
+        source_row, submit_type, wave, probe_state)
+        VALUES('http://gone.example/','gone.example','wdc','f',0,'listing',1,'probed')""")
+    conn.commit()
+    path = _ledger(tmp_path, [_t(domain="gone.example",
+                                 url="http://gone.example/", status="dropped")])
+    assert import_targets(conn, path)["dropped"] == 1
+    assert import_targets(conn, path)["dropped"] == 0
+
+
 def test_existing_classification_is_not_downgraded(conn, tmp_path):
     conn.execute("""INSERT INTO pool(url, domain, source_kind, source_file,
         source_row, submit_type, wave, probe_state)

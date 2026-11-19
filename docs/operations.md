@@ -23,7 +23,11 @@ Rules enforced by the importer (`src/osched/workbench.py`):
   has none (a specific endpoint is never replaced by a root URL).
 - **No downgrades.** A ledger row with `submit_type=unknown` never overwrites
   a probed/curated type — that would push the plan back to wave 3 for nothing.
-- **`dropped` targets are skipped.** `working` / `pending` / `done` are kept.
+- **`dropped` targets are skipped and propagate.** `working` / `pending` /
+  `done` are kept; a ledger row marked `dropped`/`banned`/`do_not_use` also
+  flips every existing pool row for that domain to `status='dropped'`, so the
+  scheduler stops delivering to a target the operator already rejected.
+  (Without this the pool kept queueing contact pages labelled as listings.)
 - Curated rows carry `fit_score` in `hints_json`; matching treats it as the
   evidence prior and lets the row into the pending queue without clearing
   `min_score` (`scoring.curated_trust: true`, default). The human `confirm`

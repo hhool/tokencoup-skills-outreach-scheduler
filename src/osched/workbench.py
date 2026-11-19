@@ -49,7 +49,7 @@ def import_targets(conn: sqlite3.Connection, path: str | Path, *,
     p = Path(path).expanduser()
     stats = {"path": str(p), "rows": 0, "inserted": 0, "upgraded": 0,
              "skipped_status": 0, "skipped_fit": 0, "skipped_invalid": 0,
-             "skipped_downgrade": 0}
+             "skipped_downgrade": 0, "dropped": 0}
     if not p.is_file():
         raise FileNotFoundError(str(p))
 
@@ -67,6 +67,16 @@ def import_targets(conn: sqlite3.Connection, path: str | Path, *,
 
             status = (t.get("status") or "").lower()
             if status in SKIP_STATUS:
+                # A drop in the ledger IS a decision: the pool must stop
+                # delivering to that domain. Skipping the row outright left
+                # the pool holding `active` rows the operator had already
+                # rejected (pcastuces, smoothdirectory: contact pages labelled
+                # as listings kept queueing submissions that could never land).
+                dom = _domain(t.get("url") or "", t.get("domain") or "")
+                if dom:
+                    stats["dropped"] += conn.execute(
+                        "UPDATE pool SET status='dropped', last_seen=datetime('now') "
+                        "WHERE domain=? AND status!='dropped'", (dom,)).rowcount
                 stats["skipped_status"] += 1
                 continue
             fit = t.get("fit_score") or 0

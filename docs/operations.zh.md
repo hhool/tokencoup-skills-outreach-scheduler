@@ -22,7 +22,10 @@ python3 bin/osched.py import-workbench ~/seo/<site>/targets.jsonl [--min-fit 50]
   `entry_url` 为空时写入（具体端点绝不被根 URL 覆盖）。
 - **不允许降级**：台账里 `submit_type=unknown` 的行不会覆盖已探测/已策展
   的类型——那只会把计划无缘无故打回 wave3。
-- **跳过 `dropped`**：保留 `working` / `pending` / `done`。
+- **跳过 `dropped`，且丢弃会传导**：保留 `working` / `pending` / `done`；
+  台账标 `dropped` / `banned` / `do_not_use` 的行，会把该域在 pool 里的
+  所有行置为 `status='dropped'`——台账已经放弃的目标，调度器不再投递。
+  （此前只跳过不传导，导致已判死的联系表单页仍在排队投递。）
 - 策展行的 `fit_score` 存进 `hints_json`，匹配时当作证据先验，并允许
   该行绕过 `min_score` 进待确认队列（`scoring.curated_trust: true`，默认开）。
   人工 `confirm` 闸仍在队列与投递之间。

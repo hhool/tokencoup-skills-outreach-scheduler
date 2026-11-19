@@ -82,7 +82,11 @@ wave-3 human queue. The curated ledger the SEO workbench keeps per site
   has none (a specific endpoint is never replaced by a root URL).</li>
 <li><strong>No downgrades.</strong> A ledger row with <code>submit_type=unknown</code> never overwrites
   a probed/curated type — that would push the plan back to wave 3 for nothing.</li>
-<li><strong><code>dropped</code> targets are skipped.</strong> <code>working</code> / <code>pending</code> / <code>done</code> are kept.</li>
+<li><strong><code>dropped</code> targets are skipped and propagate.</strong> <code>working</code> / <code>pending</code> /
+  <code>done</code> are kept; a ledger row marked <code>dropped</code>/<code>banned</code>/<code>do_not_use</code> also
+  flips every existing pool row for that domain to <code>status='dropped'</code>, so the
+  scheduler stops delivering to a target the operator already rejected.
+  (Without this the pool kept queueing contact pages labelled as listings.)</li>
 <li>Curated rows carry <code>fit_score</code> in <code>hints_json</code>; matching treats it as the
   evidence prior and lets the row into the pending queue without clearing
   <code>min_score</code> (<code>scoring.curated_trust: true</code>, default). The human <code>confirm</code>
@@ -320,7 +324,10 @@ wordpress.com、reddit、tumblr。这些要「开户 + 发文」，不是表单�
   <code>entry_url</code> 为空时写入（具体端点绝不被根 URL 覆盖）。</li>
 <li><strong>不允许降级</strong>：台账里 <code>submit_type=unknown</code> 的行不会覆盖已探测/已策展
   的类型——那只会把计划无缘无故打回 wave3。</li>
-<li><strong>跳过 <code>dropped</code></strong>：保留 <code>working</code> / <code>pending</code> / <code>done</code>。</li>
+<li><strong>跳过 <code>dropped</code>，且丢弃会传导</strong>：保留 <code>working</code> / <code>pending</code> / <code>done</code>；
+  台账标 <code>dropped</code> / <code>banned</code> / <code>do_not_use</code> 的行，会把该域在 pool 里的
+  所有行置为 <code>status='dropped'</code>——台账已经放弃的目标，调度器不再投递。
+  （此前只跳过不传导，导致已判死的联系表单页仍在排队投递。）</li>
 <li>策展行的 <code>fit_score</code> 存进 <code>hints_json</code>，匹配时当作证据先验，并允许
   该行绕过 <code>min_score</code> 进待确认队列（<code>scoring.curated_trust: true</code>，默认开）。
   人工 <code>confirm</code> 闸仍在队列与投递之间。</li>
