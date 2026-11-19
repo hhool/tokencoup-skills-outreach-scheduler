@@ -74,10 +74,11 @@ def _sec_summary(conn, pid: int, start: str, end: str) -> tuple[str, list[str]]:
     return "1. Summary", lines
 
 
-def _sec_live_links(conn, pid: int) -> tuple[str, list[str]]:
+def _sec_live_links(conn, pid: int, cfg: dict | None = None) -> tuple[str, list[str]]:
     rows = conn.execute(
         """
-        SELECT p.domain AS dir_domain, pl.result_note, pl.executed_at
+        SELECT p.domain AS dir_domain, pl.result_note, pl.executed_at,
+               pl.id AS plan_id
         FROM plan pl
         JOIN match m ON m.id = pl.match_id
         JOIN pool p ON p.id = m.pool_id
@@ -91,6 +92,9 @@ def _sec_live_links(conn, pid: int) -> tuple[str, list[str]]:
         landing = _safe_note(r["result_note"]).get("landing", "")
         where = f" on {r['dir_domain']}" if r["dir_domain"] else ""
         lines.append(f"  {landing}{where} (submitted {r['executed_at'][:10]})")
+        if cfg:
+            from .evidence import url_for
+            lines.append(f"    receipt: {url_for(cfg, r['plan_id'])}")
     if not lines:
         lines = ["  (no live links verified yet — first ones typically ",
                  "   appear ~3 days after submission)"]
@@ -150,12 +154,13 @@ def _sec_decisions(conn, pid: int) -> tuple[str, list[str]]:
 # --------------------------------------------------------------------------
 
 def build_client_report(conn, project: dict, *, days: int = 7,
-                        ref: str | None = None) -> str:
+                        ref: str | None = None,
+                        cfg: dict | None = None) -> str:
     start, end = _period(days, ref)
     pid = project["_id"]
     sections = [
         _sec_summary(conn, pid, start, end),
-        _sec_live_links(conn, pid),
+        _sec_live_links(conn, pid, cfg=cfg),
         _sec_activity(conn, pid, start, end),
         _sec_decisions(conn, pid),
     ]
@@ -170,7 +175,7 @@ def build_client_report(conn, project: dict, *, days: int = 7,
 def run_client_report(conn, cfg: dict, project: dict, *, days: int = 7,
                       ref: str | None = None, dry_run: bool = False) -> dict:
     """Build (+ optionally send) one client report; always run_log."""
-    text = build_client_report(conn, project, days=days, ref=ref)
+    text = build_client_report(conn, project, days=days, ref=ref, cfg=cfg)
     outcome = {"built": True, "chars": len(text),
                "project": project["domain"], "days": days}
     recipient = ((project.get("report") or {}).get("email")

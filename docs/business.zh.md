@@ -34,6 +34,24 @@ execute → report）是「机器」；业务层是把机器变成可售卖、�
   （probe_cache 已有 30 天审计框架）+ CUA 通道可复用同一次浏览器会话。
 - 价值：客户付费的唯一硬证据；没有它，日报里的 submitted 只是过程指标。
 
+**证据层（2026-11-19 上线）。** 验活从「单次判定」升级为时间序列：
+
+- `link_check` —— append-only 事件表（result、http、rel、锚文本、页面
+  sha256、时间戳）。`link_verify` 保持「最新判定」摘要，门户/报告/调度
+  的既有查询零改动。
+- 已上线的链接每 14 天复检一轮（`RECHECK_AFTER_DAYS`）；复检未命中只统计
+  **首次 live 之后** 的 missing，确认前的未命中不会把已交付链接拽进人工。
+- 每条 live 链接都有公开、防篡改的证据页 `/evidence/<plan>.<hmac>`
+  （`src/osched/evidence.py`）：listing 地址、锚文本、rel 属性
+  （dofollow/nofollow）、首次发现时间、最近 12 次复检、检查时的页面指纹。
+  免登录；URL 不可猜且与单一 plan 绑定。签名密钥：`EVIDENCE_SECRET`
+  环境变量，缺省在 data_root 自动生成持久密钥文件（0600）。
+- 暴露位置：门户实链台账（receipt 列）、客户报告（receipt URL 行）、
+  CLI `osched evidence-url <plan_id>`。
+- 竞品注记：单纯「live 监控」已不是差异点（ShipDR 每 6 小时复检、
+  Pitchbox 有逐链健康监控）。真正的楔子是**公开可验证的证据页** +
+  不 live 不计费 + 复检序列自然产出的链接存活曲线。
+
 ## B2. 客户报告（优先级 2）
 
 面向客户的 run_log 过滤视图：提交数、成功率、**实链清单**、待客户决策项。

@@ -40,6 +40,28 @@ to the human queue.
 - Value: the only hard evidence a client pays for; without it the daily
   report's "submitted" is a process metric, not a result metric.
 
+**Evidence layer (shipped 2026-11-19).** Verification is now a time
+series, not a single verdict:
+
+- `link_check` — append-only event table (result, http, rel, anchor text,
+  page sha256, timestamp). `link_verify` stays the latest-verdict summary
+  consumed by the portal/report/scheduler.
+- Live plans are re-visited every 14 days (`RECHECK_AFTER_DAYS`); a
+  recheck miss counts only missings *after* the first live verdict, so a
+  delivered link is never yanked to human by pre-confirmation misses.
+- Every live link gets a public, tamper-evident receipt at
+  `/evidence/<plan>.<hmac>` (`src/osched/evidence.py`): listing URL,
+  anchor text, rel attribute (dofollow/nofollow), first-seen time, the
+  last 12 checks, and the page hash at check time. No login; URL is
+  unguessable and bound to one plan. Signing secret: `EVIDENCE_SECRET`
+  env, or an auto-generated persistent file under data_root (0600).
+- Surfaced in the portal live-link ledger (receipt column), the client
+  report (receipt URL lines), and `osched evidence-url <plan_id>`.
+- Competitive note: live monitoring alone is no longer a differentiator
+  (ShipDR rechecks every 6h; Pitchbox ships per-link health monitoring).
+  The wedge is the *public verifiable receipt* + never-billed-if-not-live
+  + the survival curve that falls out of the check series.
+
 ## B2. Client report  (priority 2)
 
 A client-facing filtered view of run_log: submissions, success rate,

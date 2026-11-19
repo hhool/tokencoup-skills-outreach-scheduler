@@ -420,6 +420,20 @@ def cmd_verify(cfg: dict, domain: str | None, days: int, limit: int) -> int:
     return 0
 
 
+def cmd_evidence(cfg: dict, plan_id: int) -> int:
+    """Print the public receipt URL (and a summary) for one plan."""
+    from osched.evidence import receipt
+    conn = connect(data_root(cfg))
+    r = receipt(conn, cfg, plan_id)
+    if not r:
+        print(f"no plan #{plan_id}")
+        return 1
+    print(r["url"])
+    print(f"  state={r['state']}  placement={r['placement']}  "
+          f"checks={r['checks']}  first_live={r['first_live'] or '—'}")
+    return 0
+
+
 def cmd_overview(cfg: dict) -> int:
     """B5 multi-client operations view: one row per project + SLA alerts."""
     conn = connect(data_root(cfg))
@@ -541,6 +555,9 @@ def main(argv: list[str] | None = None) -> int:
     p_verify.add_argument("--days", type=int, default=3,
                           help="verify plans executed >= N days ago")
     p_verify.add_argument("--limit", type=int, default=0)
+    p_ev = sub.add_parser("evidence-url",
+                          help="public receipt URL for one plan (B1)")
+    p_ev.add_argument("plan_id", type=int)
     p_crep = sub.add_parser("client-report",
                             help="client-facing periodic report (B2)")
     p_crep.add_argument("domain")
@@ -628,6 +645,8 @@ def main(argv: list[str] | None = None) -> int:
         return cmd_asset(cfg, args.domain, args.kind, args.content)
     if args.cmd == "verify":
         return cmd_verify(cfg, args.domain, args.days, args.limit)
+    if args.cmd == "evidence-url":
+        return cmd_evidence(cfg, args.plan_id)
     if args.cmd == "client-report":
         return cmd_client_report(cfg, args.domain, args.days, args.ref,
                                  args.dry_run)

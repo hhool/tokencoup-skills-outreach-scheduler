@@ -115,6 +115,28 @@ to the human queue.</p>
 <li>Value: the only hard evidence a client pays for; without it the daily
   report's "submitted" is a process metric, not a result metric.</li>
 </ul>
+<p><strong>Evidence layer (shipped 2026-11-19).</strong> Verification is now a time
+series, not a single verdict:</p>
+<ul>
+<li><code>link_check</code> — append-only event table (result, http, rel, anchor text,
+  page sha256, timestamp). <code>link_verify</code> stays the latest-verdict summary
+  consumed by the portal/report/scheduler.</li>
+<li>Live plans are re-visited every 14 days (<code>RECHECK_AFTER_DAYS</code>); a
+  recheck miss counts only missings <em>after</em> the first live verdict, so a
+  delivered link is never yanked to human by pre-confirmation misses.</li>
+<li>Every live link gets a public, tamper-evident receipt at
+  <code>/evidence/&lt;plan&gt;.&lt;hmac&gt;</code> (<code>src/osched/evidence.py</code>): listing URL,
+  anchor text, rel attribute (dofollow/nofollow), first-seen time, the
+  last 12 checks, and the page hash at check time. No login; URL is
+  unguessable and bound to one plan. Signing secret: <code>EVIDENCE_SECRET</code>
+  env, or an auto-generated persistent file under data_root (0600).</li>
+<li>Surfaced in the portal live-link ledger (receipt column), the client
+  report (receipt URL lines), and <code>osched evidence-url &lt;plan_id&gt;</code>.</li>
+<li>Competitive note: live monitoring alone is no longer a differentiator
+  (ShipDR rechecks every 6h; Pitchbox ships per-link health monitoring).
+  The wedge is the <em>public verifiable receipt</em> + never-billed-if-not-live</li>
+<li>the survival curve that falls out of the check series.</li>
+</ul>
 <h2>B2. Client report  (priority 2)</h2>
 <p>A client-facing filtered view of run_log: submissions, success rate,
 <strong>live-link list</strong>, items awaiting the client's decision. Emailed to the
@@ -511,6 +533,24 @@ execute → report）是「机器」；业务层是把机器变成可售卖、�
 <li>建立在：plan 状态机（<code>submitted</code> 后新增 <code>live</code> 状态）+ probe 回访机制
   （probe_cache 已有 30 天审计框架）+ CUA 通道可复用同一次浏览器会话。</li>
 <li>价值：客户付费的唯一硬证据；没有它，日报里的 submitted 只是过程指标。</li>
+</ul>
+<p><strong>证据层（2026-11-19 上线）。</strong> 验活从「单次判定」升级为时间序列：</p>
+<ul>
+<li><code>link_check</code> —— append-only 事件表（result、http、rel、锚文本、页面
+  sha256、时间戳）。<code>link_verify</code> 保持「最新判定」摘要，门户/报告/调度
+  的既有查询零改动。</li>
+<li>已上线的链接每 14 天复检一轮（<code>RECHECK_AFTER_DAYS</code>）；复检未命中只统计
+  <strong>首次 live 之后</strong> 的 missing，确认前的未命中不会把已交付链接拽进人工。</li>
+<li>每条 live 链接都有公开、防篡改的证据页 <code>/evidence/&lt;plan&gt;.&lt;hmac&gt;</code>
+  （<code>src/osched/evidence.py</code>）：listing 地址、锚文本、rel 属性
+  （dofollow/nofollow）、首次发现时间、最近 12 次复检、检查时的页面指纹。
+  免登录；URL 不可猜且与单一 plan 绑定。签名密钥：<code>EVIDENCE_SECRET</code>
+  环境变量，缺省在 data_root 自动生成持久密钥文件（0600）。</li>
+<li>暴露位置：门户实链台账（receipt 列）、客户报告（receipt URL 行）、
+  CLI <code>osched evidence-url &lt;plan_id&gt;</code>。</li>
+<li>竞品注记：单纯「live 监控」已不是差异点（ShipDR 每 6 小时复检、
+  Pitchbox 有逐链健康监控）。真正的楔子是<strong>公开可验证的证据页</strong> +
+  不 live 不计费 + 复检序列自然产出的链接存活曲线。</li>
 </ul>
 <h2>B2. 客户报告（优先级 2）</h2>
 <p>面向客户的 run_log 过滤视图：提交数、成功率、<strong>实链清单</strong>、待客户决策项。

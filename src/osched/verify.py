@@ -20,6 +20,7 @@ missing 重试上限后进人工；bot-blocked 只是稍后再试。
 """
 from __future__ import annotations
 
+import hashlib
 import json
 import re
 import urllib.parse
@@ -29,6 +30,33 @@ from .guard import sync_quota_used
 
 MAX_ATTEMPTS = 3        # missing-checks before human handoff
 RETRY_AFTER = 2         # days between attempts
+RECHECK_AFTER_DAYS = 14  # live links are re-visited on this cadence
+
+ANCHOR_RE = re.compile(r"<a\b([^>]*)>(.*?)</a>", re.IGNORECASE | re.DOTALL)
+HREF_RE = re.compile(r"href\s*=\s*[\"']([^\"']+)[\"']", re.IGNORECASE)
+REL_RE = re.compile(r"rel\s*=\s*[\"']([^\"']+)[\"']", re.IGNORECASE)
+
+
+def _find_anchor(html: str, landing: str) -> dict:
+    """Locate the anchor that carries the landing URL and record its rel
+    attribute and anchor text — the difference between 'we think it is live'
+    and a receipt a client can forward to their boss."""
+    landing_l = landing.lower().rstrip("/")
+    host = urllib.parse.urlparse(landing_l).netloc.lower()
+    for m in ANCHOR_RE.finditer(html):
+        attrs, inner = m.group(1), m.group(2)
+        hm = HREF_RE.search(attrs)
+        if not hm:
+            continue
+        href = urllib.parse.unquote(hm.group(1)).lower().replace("&amp;", "&")
+        if landing_l not in href and not (host and host in href):
+            continue
+        rm = REL_RE.search(attrs)
+        text = re.sub(r"<[^>]+>", " ", inner)
+        return {"href": hm.group(1),
+                "rel": rm.group(1).lower().strip() if rm else "",
+                "text": " ".join(text.split())[:120]}
+    return {}
 
 
 def _landing(plan_note: str, fallback: str) -> str:
@@ -61,24 +89,37 @@ def _page_contains_link(html: str, landing: str) -> bool:
 
 def due_verify(conn, project_id: int | None = None, *, days_after: int = 3,
                limit: int = 0) -> list:
-    """Plans old enough to verify, whose latest verdict allows a new check."""
+    """Plans old enough to verify, whose latest verdict allows a new check.
+
+    Two branches: first-time confirmation for submitted/sent plans, and the
+    recheck cadence for plans already live — the survival curve needs
+    periodic revisits, not just one confirmation.
+    """
     rows = conn.execute(
         """
         SELECT pl.*, p.domain AS pool_domain, p.entry_url, p.url
         FROM plan pl
         JOIN match m ON m.id = pl.match_id
         JOIN pool p ON p.id = m.pool_id
-        WHERE pl.state IN ('submitted', 'sent')
-          AND pl.executed_at <= datetime('now', ?)
-          AND NOT EXISTS (
-                SELECT 1 FROM link_verify v
-                WHERE v.plan_id = pl.id AND v.result = 'live')
-          AND (SELECT COUNT(*) FROM run_log
-               WHERE action='verify' AND target LIKE '%plan#' || pl.id || '%'
-                     AND result='missing') < ?
+        WHERE (
+          (pl.state IN ('submitted', 'sent')
+            AND pl.executed_at <= datetime('now', ?)
+            AND NOT EXISTS (
+                  SELECT 1 FROM link_verify v
+                  WHERE v.plan_id = pl.id AND v.result = 'live')
+            AND (SELECT COUNT(*) FROM run_log
+                 WHERE action='verify' AND target LIKE '%plan#' || pl.id || '%'
+                       AND result='missing') < ?)
+          OR
+          (pl.state = 'live'
+            AND COALESCE((SELECT MAX(checked_at) FROM link_check
+                          WHERE plan_id = pl.id), '1970-01-01')
+                <= datetime('now', ?))
+        )
         ORDER BY pl.executed_at
         """,
-        (f"-{days_after} days", MAX_ATTEMPTS),
+        (f"-{days_after} days", MAX_ATTEMPTS,
+         f"-{RECHECK_AFTER_DAYS} days"),
     ).fetchall()
     if project_id:
         rows = [r for r in rows if r["project_id"] == project_id]
@@ -106,13 +147,33 @@ def check_one(conn, row) -> dict:
         outcome = {"result": "missing", "http": status,
                    "note": "landing not on page"}
 
+    anchor = {}
+    page_sha = ""
+    if outcome["result"] == "live" and html:
+        anchor = _find_anchor(html, landing)
+        page_sha = hashlib.sha256(
+            html.encode("utf-8", "replace")).hexdigest()
+
     conn.execute(
-        """INSERT INTO link_verify(plan_id, result, http_status, note)
-           VALUES(?,?,?,?)
+        """INSERT INTO link_verify(plan_id, result, http_status, note,
+                                   rel, anchor_text, page_sha256)
+           VALUES(?,?,?,?,?,?,?)
            ON CONFLICT(plan_id) DO UPDATE SET checked_at=datetime('now'),
              result=excluded.result, http_status=excluded.http_status,
-             note=excluded.note""",
-        (row["id"], outcome["result"], outcome["http"], outcome["note"]),
+             note=excluded.note, rel=excluded.rel,
+             anchor_text=excluded.anchor_text,
+             page_sha256=excluded.page_sha256""",
+        (row["id"], outcome["result"], outcome["http"], outcome["note"],
+         anchor.get("rel", ""), anchor.get("text", ""), page_sha),
+    )
+    # Append-only event: the survival curve is built from these rows.
+    conn.execute(
+        """INSERT INTO link_check(plan_id, result, http_status, rel,
+                                  anchor_text, anchor_href, page_sha256, note)
+           VALUES(?,?,?,?,?,?,?,?)""",
+        (row["id"], outcome["result"], outcome["http"],
+         anchor.get("rel", ""), anchor.get("text", ""),
+         anchor.get("href", ""), page_sha, outcome["note"]),
     )
     conn.execute(
         "INSERT INTO run_log(action, target, result, note) "
@@ -133,12 +194,21 @@ def check_one(conn, row) -> dict:
         # for the scheduler's credit ceiling (guard.allowance).
         sync_quota_used(conn, row["project_id"])
     elif outcome["result"] == "missing":
-        attempts = conn.execute(
-            """SELECT COUNT(*) AS n FROM run_log
-               WHERE action='verify' AND target LIKE ?
-                     AND result='missing'""",
-            (f"%plan#{row['id']}%",),
-        ).fetchone()["n"]
+        # Exhaustion counter: for plans already live, count only missings
+        # AFTER the first live verdict — pre-confirmation misses must not
+        # yank a delivered link to the human queue on one recheck miss.
+        like = f"%plan#{row['id']}%"
+        first_live = conn.execute(
+            """SELECT MIN(id) AS i FROM run_log
+               WHERE action='verify' AND result='live' AND target LIKE ?""",
+            (like,)).fetchone()["i"]
+        q = ("SELECT COUNT(*) AS n FROM run_log WHERE action='verify' "
+             "AND target LIKE ? AND result='missing'")
+        params = [like]
+        if first_live:
+            q += " AND id > ?"
+            params.append(first_live)
+        attempts = conn.execute(q, params).fetchone()["n"]
         if attempts >= MAX_ATTEMPTS:
             conn.execute(
                 """UPDATE plan SET state='human', result_note=?

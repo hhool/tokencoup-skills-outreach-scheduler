@@ -36,6 +36,7 @@ from http.server import BaseHTTPRequestHandler, HTTPServer
 from urllib.parse import parse_qs, urlencode, urlparse
 
 from .db import connect as db_connect
+from . import evidence as evidence_mod
 from .guard import (DENY_TEXT, TRIAL_CREDITS, canonical_email, client_ip,
                     draft_quota_message, record_trial, registrable_domain,
                     signup_blocked, trial_verdict)
@@ -581,11 +582,11 @@ def _pending_projects(conn, client_id: int):
            ORDER BY created_at DESC""", (client_id,)).fetchall()
 
 
-def _live_ledger(conn, client_id: int, limit: int = 20):
-    return conn.execute(
+def _live_ledger(conn, client_id: int, limit: int = 20, cfg: dict | None = None):
+    rows = conn.execute(
         """
         SELECT pr.domain AS project, p.domain AS placement, pl.state,
-               p.dr, lv.checked_at
+               p.dr, lv.checked_at, pl.id AS plan_id
         FROM link_verify lv
         JOIN plan pl ON pl.id = lv.plan_id
         JOIN project pr ON pr.id = pl.project_id
@@ -596,6 +597,13 @@ def _live_ledger(conn, client_id: int, limit: int = 20):
         WHERE req.client_id=? AND lv.result='live'
         ORDER BY lv.checked_at DESC LIMIT ?
         """, (client_id, limit)).fetchall()
+    out = []
+    for r in rows:
+        d = dict(r)
+        d["receipt"] = (evidence_mod.url_for(cfg, r["plan_id"])
+                        if cfg else "")
+        out.append(d)
+    return out
 
 
 def _capacity_rows(conn, client_id: int, day: str):
@@ -738,22 +746,24 @@ def render_dashboard(conn, client) -> str:
             "24h. Pacing is deliberate — submissions are staggered.</p>"
             "</div>")
 
-        ledger = _live_ledger(conn, client["id"])
+        ledger = _live_ledger(conn, client["id"], cfg=self.cfg)
         if ledger:
             led_rows = "".join(
                 f"<tr><td>{_esc(r['project'])}</td><td>{_esc(r['placement'])}</td>"
                 f"<td>{'%.0f' % r['dr'] if r['dr'] is not None else '—'}</td>"
-                f"<td>{_esc(r['checked_at'])}</td></tr>" for r in ledger)
+                f"<td>{_esc(r['checked_at'])}</td>"
+                f"<td><a href='{_esc(r['receipt'])}'>receipt →</a></td></tr>"
+                for r in ledger)
         else:
-            led_rows = ("<tr><td colspan='4' class='muted'>no live links "
+            led_rows = ("<tr><td colspan='5' class='muted'>no live links "
                         "confirmed yet</td></tr>")
         effect_card = (
             "<div class='card'><h2>Live-link ledger</h2>"
             "<table><tr><th>project</th><th>placement domain</th><th>DR</th>"
-            "<th>confirmed</th></tr>" + led_rows + "</table>"
+            "<th>confirmed</th><th>receipt</th></tr>" + led_rows + "</table>"
             "<p class='muted'>Tier 1 evidence — each row is a consumed "
-            "credit with a receipt. <a href='/reports'>Weekly report "
-            "archive →</a></p></div>")
+            "credit with a public, verifiable receipt. <a href='/reports'>"
+            "Weekly report archive →</a></p></div>")
 
         b = _dr_buckets(conn, client["id"])
         mix = _source_mix(conn, client["id"])
@@ -909,8 +919,22 @@ class PortalHandler(BaseHTTPRequestHandler):
                                   (tok,))
                 self.conn.commit()
             self._redirect("/", cookie="deleted")
+        elif path.startswith("/evidence/"):
+            self._page_evidence(path[len("/evidence/"):])
         else:
             self._html("<h1>Not found</h1>", title="404")
+
+    def _page_evidence(self, token: str):
+        """Public link receipt — no session, unguessable signed URL."""
+        plan_id = evidence_mod.parse_token(self.cfg, token)
+        if plan_id is None:
+            self._html("<h1>Not found</h1>", title="404")
+            return
+        body = evidence_mod.render_page(self.conn, self.cfg, plan_id)
+        if body is None:
+            self._html("<h1>Not found</h1>", title="404")
+            return
+        self._html(body, title="link receipt")
 
     def _page_home(self, notice: str = "", email: str = ""):
         notice_html = f"<p class='ok'>{_esc(notice)}</p>" if notice else ""
@@ -1282,7 +1306,8 @@ class PortalHandler(BaseHTTPRequestHandler):
             "capacity": [dict(r) for r in
                          _capacity_rows(self.conn, client["id"], day)],
             "ledger": [dict(r) for r in
-                       _live_ledger(self.conn, client["id"])],
+                       _live_ledger(self.conn, client["id"],
+                                    cfg=self.cfg)],
             "dr_buckets": _dr_buckets(self.conn, client["id"]),
             "source_mix": [dict(r) for r in
                            _source_mix(self.conn, client["id"])],

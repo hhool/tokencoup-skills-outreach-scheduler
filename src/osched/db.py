@@ -118,6 +118,25 @@ CREATE TABLE IF NOT EXISTS link_verify (
 
 CREATE UNIQUE INDEX IF NOT EXISTS idx_link_verify_plan ON link_verify(plan_id);
 
+-- Append-only check history (evidence layer): every verify attempt lands
+-- here as an event; link_verify keeps only the latest verdict. The time
+-- series is what makes "link survival curve" and receipts possible.
+CREATE TABLE IF NOT EXISTS link_check (
+  id          INTEGER PRIMARY KEY AUTOINCREMENT,
+  plan_id     INTEGER NOT NULL REFERENCES plan(id),
+  checked_at  TEXT NOT NULL DEFAULT (datetime('now')),
+  result      TEXT NOT NULL,     -- live | missing | unreachable | bot-blocked
+  http_status INTEGER,
+  rel         TEXT,              -- rel attribute of the found anchor
+  anchor_text TEXT,
+  anchor_href TEXT,
+  page_sha256 TEXT,              -- sha256 of the fetched HTML at check time
+  note        TEXT
+);
+
+CREATE INDEX IF NOT EXISTS idx_link_check_plan
+  ON link_check(plan_id, checked_at);
+
 CREATE TABLE IF NOT EXISTS run_log (
   id      INTEGER PRIMARY KEY AUTOINCREMENT,
   ts      TEXT NOT NULL DEFAULT (datetime('now')),
@@ -161,6 +180,12 @@ def _migrate(conn: sqlite3.Connection) -> None:
         "PRAGMA table_info(account)").fetchall()}
     if "activation_url" not in cols:
         conn.execute("ALTER TABLE account ADD COLUMN activation_url TEXT")
+    lv_cols = {r["name"] for r in conn.execute(
+        "PRAGMA table_info(link_verify)").fetchall()}
+    for name, decl in (("rel", "TEXT"), ("anchor_text", "TEXT"),
+                       ("page_sha256", "TEXT")):
+        if lv_cols and name not in lv_cols:
+            conn.execute(f"ALTER TABLE link_verify ADD COLUMN {name} {decl}")
 
 
 def connect(data_root: pathlib.Path) -> sqlite3.Connection:
