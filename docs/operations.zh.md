@@ -48,7 +48,7 @@ python3 bin/osched.py import-workbench ~/seo/<site>/targets.jsonl [--min-fit 50]
 | 1. 开户 | `osched register-signup <domain>`：CUA 打开平台（先静态发现 `/register` `/signup` `/sign-up` `/join`，被挡再由 CUA 走同批路径），识别注册表单（密码 + 身份字段，登录表单拒绝），填身份字段 + 生成密码，提交 | 完成；验证码/无表单 → `human` |
 | 2. 验证邮件 | `osched mail-verify`（IMAP）提取激活链接/验证码 → `account.activation_url` | 完成（既有） |
 | 3. 激活 + 发文 | `osched account-activate`（CUA 点击激活链接）；`osched register-publish` 登录、找含 URL 的表单、发文并落 `plan(state=submitted)` 供验活 | 完成 |
-| 1b. 验证码交接 | `osched register-signup <domain> --assist` 遇验证码暂停，写 `data_root/captcha_handoff/<domain>.json`，等人工在可见浏览器解决后 touch `.go` 信号（`osched handoff-status <domain>` 查看） | 完成；不做自动过码 |
+| 1b. 验证码交接 | `osched register-signup <domain> --assist` 遇验证码暂停，写 `data_root/captcha_handoff/<domain>.json`，等人工在可见浏览器解决后 touch `.go` 信号（`osched handoff-status <domain>` 查看）。注册路径挂在**站点根域**，不是深层 `entry_url`（alternativeto 的 `/manage/add-app`）；`.go` 信号即人工确认——已过的 turnstile 残留 widget 标记不得再次拦住表单填报 | 完成；不做自动过码 |
 
 试点（2026-11-19，6 个 confirmed 目标）：0 开户成功——大平台开户全部有验证码/反爬
 （alternativeto、sitelike = turnstile；youtube、tumblr = 反爬/超时；jasmine、

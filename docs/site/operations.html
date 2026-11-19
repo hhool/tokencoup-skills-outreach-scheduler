@@ -160,7 +160,7 @@ existing account ledger:</p>
 </tr>
 <tr>
 <td>1b. captcha handoff</td>
-<td><code>osched register-signup &lt;domain&gt; --assist</code> pauses on a challenge, writes <code>data_root/captcha_handoff/&lt;domain&gt;.json</code>, and waits for the operator to solve it in the visible browser and touch the <code>.go</code> marker (<code>osched handoff-status &lt;domain&gt;</code> to inspect)</td>
+<td><code>osched register-signup &lt;domain&gt; --assist</code> pauses on a challenge, writes <code>data_root/captcha_handoff/&lt;domain&gt;.json</code>, and waits for the operator to solve it in the visible browser and touch the <code>.go</code> marker (<code>osched handoff-status &lt;domain&gt;</code> to inspect). Signup paths hang off the <strong>site root</strong>, not a deep <code>entry_url</code> (alternativeto's <code>/manage/add-app</code>); the <code>.go</code> marker is the human attestation — a solved turnstile's leftover widget markup must not re-gate the form fill.</td>
 <td>done; no automated captcha solving</td>
 </tr>
 </tbody>
@@ -387,7 +387,7 @@ wordpress.com、reddit、tumblr。这些要「开户 + 发文」，不是表单�
 </tr>
 <tr>
 <td>1b. 验证码交接</td>
-<td><code>osched register-signup &lt;domain&gt; --assist</code> 遇验证码暂停，写 <code>data_root/captcha_handoff/&lt;domain&gt;.json</code>，等人工在可见浏览器解决后 touch <code>.go</code> 信号（<code>osched handoff-status &lt;domain&gt;</code> 查看）</td>
+<td><code>osched register-signup &lt;domain&gt; --assist</code> 遇验证码暂停，写 <code>data_root/captcha_handoff/&lt;domain&gt;.json</code>，等人工在可见浏览器解决后 touch <code>.go</code> 信号（<code>osched handoff-status &lt;domain&gt;</code> 查看）。注册路径挂在<strong>站点根域</strong>，不是深层 <code>entry_url</code>（alternativeto 的 <code>/manage/add-app</code>）；<code>.go</code> 信号即人工确认——已过的 turnstile 残留 widget 标记不得再次拦住表单填报</td>
 <td>完成；不做自动过码</td>
 </tr>
 </tbody>
