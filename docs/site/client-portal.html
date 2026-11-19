@@ -510,17 +510,74 @@ policy is only honest if that mailbox is read by a human. It must <strong>not</s
 a personal mailbox (that address lands in every page's HTML, in git history,
 and in scraped copies).</p>
 <p>Ratified: <code>privacy@linkattest.com</code>, delivered by <strong>Cloudflare Email Routing</strong>
-(available on the same zone, free, no extra MX provider):</p>
+(available on the same zone, free, no extra MX provider).</p>
+<p><strong>Configured via API, not the dashboard</strong> — <code>tools/setup_email_routing.py</code>
+applies the whole thing (3 MX + SPF + DMARC + the routing rule) and is
+idempotent, so re-running it is safe:</p>
+<pre><code class="language-bash">CF_TOKEN=... CF_ZONE_ID=... CF_ZONE_NAME=linkattest.com \
+CF_DESTINATION=&lt;your verified mailbox&gt; \
+python3 tools/setup_email_routing.py --dry-run
+</code></pre>
+<p>Token permissions, verified against the live API rather than assumed:</p>
+<table>
+<thead>
+<tr>
+<th>endpoint</th>
+<th>this token</th>
+<th>note</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>zones/&lt;id&gt;/email/routing/rules</code></td>
+<td><strong>works</strong> (read + write)</td>
+<td>Email Routing Rules Edit</td>
+</tr>
+<tr>
+<td><code>zones/&lt;id&gt;/dns_records</code></td>
+<td><strong>works</strong> (read + write)</td>
+<td>DNS Edit</td>
+</tr>
+<tr>
+<td><code>zones/&lt;id&gt;/email/routing</code> (settings/enable)</td>
+<td>blocked</td>
+<td>zone settings write</td>
+</tr>
+<tr>
+<td><code>zones/&lt;id&gt;/email/routing/destinations</code></td>
+<td>blocked</td>
+<td>Email Routing Addresses Edit</td>
+</tr>
+<tr>
+<td><code>accounts/&lt;id&gt;/email/routing/addresses</code></td>
+<td>blocked</td>
+<td>Email Routing Addresses Edit</td>
+</tr>
+</tbody>
+</table>
+<p>Two consequences of the blocked endpoints:</p>
 <ol>
-<li>Dashboard → the zone → <strong>Email → Email Routing</strong> → enable; CF adds its MX
-   records automatically.</li>
-<li>Routing rules → <strong>Send to</strong> a verified destination address (the operator's
-   existing mailbox) — CF requires the destination to confirm before it
-   forwards, so the personal address stays private while <code>privacy@</code> stays
-   public.</li>
-<li>Optional: keep <code>contact@</code> as a second alias for general sales mail; the
-   privacy page uses <code>privacy@</code> only.</li>
+<li><strong>The DKIM record is not published.</strong> CF normally generates
+   <code>cf2024-1._domainkey.&lt;zone&gt;</code> during dashboard onboarding; the endpoint
+   that returns it is blocked. Forwarded mail still arrives — CF signs
+   outbound mail and Gmail falls back to SPF — but DKIM verification will
+   not pass. The DMARC record this script writes is therefore <code>p=none</code>, so
+   a forwarded email that fails DKIM does not also fail a strict DMARC
+   policy and get filtered. To fix properly: enable Email Routing once in
+   the dashboard (Compute &gt; Email Service &gt; Email Routing), which publishes
+   the DKIM record, then re-run the script.</li>
+<li><strong>The destination must already be verified.</strong> Destination addresses are
+   account-level and this token cannot list or create them. Until the
+   mailbox confirms the Cloudflare verification email, CF keeps the rule
+   inactive and drops the mail — the API still reports <code>enabled=true</code>, so
+   do not trust that field alone.</li>
 </ol>
+<p>Also worth knowing: <code>PATCH</code> on a rule id is rejected with "Authentication
+error" by the same token that may <code>POST</code> and <code>PUT</code> rules. The script uses
+<code>PUT</code> for updates and never <code>PATCH</code>.</p>
+<p>The forwarding destination is the operator's existing mailbox — CF requires
+the destination to confirm before it forwards, so the personal address
+stays private while <code>privacy@</code> stays public.</p>
 <p>If the address ever changes, it is a one-line edit in each of
 <code>frontend/privacy.html</code> and <code>frontend/zh/privacy.html</code> — never a policy
 rewrite. Because it is a plain string in two static pages, there is no
@@ -930,13 +987,68 @@ curl -X POST &quot;https://api.cloudflare.com/client/v4/accounts/$CF_ACCT/pages/
 这个邮箱必须真人会看。<strong>不能</strong>填个人邮箱——那个地址会进入每个页面的
 HTML、git 历史，以及被抓取后的各种副本。</p>
 <p>定稿：<code>privacy@linkattest.com</code>，由 <strong>Cloudflare Email Routing</strong> 收信
-（同一个 zone，免费，不需要额外邮件服务商）：</p>
+（同一个 zone，免费，不需要额外邮件服务商）。</p>
+<p><strong>走 API 配置，不走面板</strong>——<code>tools/setup_email_routing.py</code> 一次做完
+（3 条 MX + SPF + DMARC + 路由规则），且是幂等的，重跑安全：</p>
+<pre><code class="language-bash">CF_TOKEN=... CF_ZONE_ID=... CF_ZONE_NAME=linkattest.com \
+CF_DESTINATION=&lt;你已验证的收件邮箱&gt; \
+python3 tools/setup_email_routing.py --dry-run
+</code></pre>
+<p>Token 权限（实测得出，不是猜的）：</p>
+<table>
+<thead>
+<tr>
+<th>端点</th>
+<th>本 token</th>
+<th>说明</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>zones/&lt;id&gt;/email/routing/rules</code></td>
+<td><strong>可用</strong>（读 + 写）</td>
+<td>Email Routing Rules Edit</td>
+</tr>
+<tr>
+<td><code>zones/&lt;id&gt;/dns_records</code></td>
+<td><strong>可用</strong>（读 + 写）</td>
+<td>DNS Edit</td>
+</tr>
+<tr>
+<td><code>zones/&lt;id&gt;/email/routing</code>（settings/enable）</td>
+<td>被拒</td>
+<td>zone 设置写权限</td>
+</tr>
+<tr>
+<td><code>zones/&lt;id&gt;/email/routing/destinations</code></td>
+<td>被拒</td>
+<td>Email Routing Addresses Edit</td>
+</tr>
+<tr>
+<td><code>accounts/&lt;id&gt;/email/routing/addresses</code></td>
+<td>被拒</td>
+<td>Email Routing Addresses Edit</td>
+</tr>
+</tbody>
+</table>
+<p>被拒端点带来两个后果：</p>
 <ol>
-<li>面板 → 该 zone → <strong>Email → Email Routing</strong> → 启用；CF 自动加 MX 记录。</li>
-<li>路由规则 → <strong>Send to</strong> 一个已验证的目标地址（运维自己的邮箱）——CF
-   要求目标地址先确认才转发，所以个人地址保持私密，<code>privacy@</code> 保持公开。</li>
-<li>可选：再加 <code>contact@</code> 作商务咨询别名；隐私页只用 <code>privacy@</code>。</li>
+<li><strong>DKIM 记录没有发布。</strong> CF 通常在面板启用时生成
+   <code>cf2024-1._domainkey.&lt;zone&gt;</code>，而返回它的端点被拒。转发邮件仍能送达
+   ——CF 会给外发邮件签名，Gmail 会退回 SPF 判定——但 DKIM 校验不会通过。
+   所以脚本写的 DMARC 是 <code>p=none</code>：这样"DKIM 失败"不会连带"DMARC 严格
+   策略失败"，不会被拦进垃圾箱。要彻底修好：在面板里启用一次 Email
+   Routing（Compute &gt; Email Service &gt; Email Routing），CF 会补上 DKIM
+   记录，然后重跑脚本。</li>
+<li><strong>目标地址必须事先验证过。</strong> 目标地址是账户级的，本 token 既不能列
+   也不能建。在收件邮箱点掉 CF 的验证邮件之前，CF 会让规则保持未激活并
+   丢弃邮件——而 API 仍然返回 <code>enabled=true</code>，所以不要单独相信这个字段。</li>
 </ol>
+<p>另一个坑：对规则 id 做 <code>PATCH</code> 会被同一个 token 以 "Authentication error"
+拒绝，尽管它可以 <code>POST</code> 和 <code>PUT</code> 规则。脚本的更新路径一律用 <code>PUT</code>，不用
+<code>PATCH</code>。</p>
+<p>转发目标填运维自己的邮箱——CF 要求目标地址先确认才转发，所以个人地址保持
+私密，<code>privacy@</code> 保持公开。</p>
 <p>地址若变更，改 <code>frontend/privacy.html</code> 与 <code>frontend/zh/privacy.html</code>
 各一行即可，不动政策正文。它只是两个静态页里的字符串，不值得为此加配置
 间接层。</p></div></article></main>

@@ -320,12 +320,46 @@ curl -X POST "https://api.cloudflare.com/client/v4/accounts/$CF_ACCT/pages/proje
 HTML、git 历史，以及被抓取后的各种副本。
 
 定稿：`privacy@linkattest.com`，由 **Cloudflare Email Routing** 收信
-（同一个 zone，免费，不需要额外邮件服务商）：
+（同一个 zone，免费，不需要额外邮件服务商）。
 
-1. 面板 → 该 zone → **Email → Email Routing** → 启用；CF 自动加 MX 记录。
-2. 路由规则 → **Send to** 一个已验证的目标地址（运维自己的邮箱）——CF
-   要求目标地址先确认才转发，所以个人地址保持私密，`privacy@` 保持公开。
-3. 可选：再加 `contact@` 作商务咨询别名；隐私页只用 `privacy@`。
+**走 API 配置，不走面板**——`tools/setup_email_routing.py` 一次做完
+（3 条 MX + SPF + DMARC + 路由规则），且是幂等的，重跑安全：
+
+```bash
+CF_TOKEN=... CF_ZONE_ID=... CF_ZONE_NAME=linkattest.com \
+CF_DESTINATION=<你已验证的收件邮箱> \
+python3 tools/setup_email_routing.py --dry-run
+```
+
+Token 权限（实测得出，不是猜的）：
+
+| 端点 | 本 token | 说明 |
+|---|---|---|
+| `zones/<id>/email/routing/rules` | **可用**（读 + 写） | Email Routing Rules Edit |
+| `zones/<id>/dns_records` | **可用**（读 + 写） | DNS Edit |
+| `zones/<id>/email/routing`（settings/enable） | 被拒 | zone 设置写权限 |
+| `zones/<id>/email/routing/destinations` | 被拒 | Email Routing Addresses Edit |
+| `accounts/<id>/email/routing/addresses` | 被拒 | Email Routing Addresses Edit |
+
+被拒端点带来两个后果：
+
+1. **DKIM 记录没有发布。** CF 通常在面板启用时生成
+   `cf2024-1._domainkey.<zone>`，而返回它的端点被拒。转发邮件仍能送达
+   ——CF 会给外发邮件签名，Gmail 会退回 SPF 判定——但 DKIM 校验不会通过。
+   所以脚本写的 DMARC 是 `p=none`：这样"DKIM 失败"不会连带"DMARC 严格
+   策略失败"，不会被拦进垃圾箱。要彻底修好：在面板里启用一次 Email
+   Routing（Compute > Email Service > Email Routing），CF 会补上 DKIM
+   记录，然后重跑脚本。
+2. **目标地址必须事先验证过。** 目标地址是账户级的，本 token 既不能列
+   也不能建。在收件邮箱点掉 CF 的验证邮件之前，CF 会让规则保持未激活并
+   丢弃邮件——而 API 仍然返回 `enabled=true`，所以不要单独相信这个字段。
+
+另一个坑：对规则 id 做 `PATCH` 会被同一个 token 以 "Authentication error"
+拒绝，尽管它可以 `POST` 和 `PUT` 规则。脚本的更新路径一律用 `PUT`，不用
+`PATCH`。
+
+转发目标填运维自己的邮箱——CF 要求目标地址先确认才转发，所以个人地址保持
+私密，`privacy@` 保持公开。
 
 地址若变更，改 `frontend/privacy.html` 与 `frontend/zh/privacy.html`
 各一行即可，不动政策正文。它只是两个静态页里的字符串，不值得为此加配置

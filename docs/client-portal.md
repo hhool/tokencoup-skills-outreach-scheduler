@@ -361,16 +361,52 @@ a personal mailbox (that address lands in every page's HTML, in git history,
 and in scraped copies).
 
 Ratified: `privacy@linkattest.com`, delivered by **Cloudflare Email Routing**
-(available on the same zone, free, no extra MX provider):
+(available on the same zone, free, no extra MX provider).
 
-1. Dashboard → the zone → **Email → Email Routing** → enable; CF adds its MX
-   records automatically.
-2. Routing rules → **Send to** a verified destination address (the operator's
-   existing mailbox) — CF requires the destination to confirm before it
-   forwards, so the personal address stays private while `privacy@` stays
-   public.
-3. Optional: keep `contact@` as a second alias for general sales mail; the
-   privacy page uses `privacy@` only.
+**Configured via API, not the dashboard** — `tools/setup_email_routing.py`
+applies the whole thing (3 MX + SPF + DMARC + the routing rule) and is
+idempotent, so re-running it is safe:
+
+```bash
+CF_TOKEN=... CF_ZONE_ID=... CF_ZONE_NAME=linkattest.com \
+CF_DESTINATION=<your verified mailbox> \
+python3 tools/setup_email_routing.py --dry-run
+```
+
+Token permissions, verified against the live API rather than assumed:
+
+| endpoint | this token | note |
+|---|---|---|
+| `zones/<id>/email/routing/rules` | **works** (read + write) | Email Routing Rules Edit |
+| `zones/<id>/dns_records` | **works** (read + write) | DNS Edit |
+| `zones/<id>/email/routing` (settings/enable) | blocked | zone settings write |
+| `zones/<id>/email/routing/destinations` | blocked | Email Routing Addresses Edit |
+| `accounts/<id>/email/routing/addresses` | blocked | Email Routing Addresses Edit |
+
+Two consequences of the blocked endpoints:
+
+1. **The DKIM record is not published.** CF normally generates
+   `cf2024-1._domainkey.<zone>` during dashboard onboarding; the endpoint
+   that returns it is blocked. Forwarded mail still arrives — CF signs
+   outbound mail and Gmail falls back to SPF — but DKIM verification will
+   not pass. The DMARC record this script writes is therefore `p=none`, so
+   a forwarded email that fails DKIM does not also fail a strict DMARC
+   policy and get filtered. To fix properly: enable Email Routing once in
+   the dashboard (Compute > Email Service > Email Routing), which publishes
+   the DKIM record, then re-run the script.
+2. **The destination must already be verified.** Destination addresses are
+   account-level and this token cannot list or create them. Until the
+   mailbox confirms the Cloudflare verification email, CF keeps the rule
+   inactive and drops the mail — the API still reports `enabled=true`, so
+   do not trust that field alone.
+
+Also worth knowing: `PATCH` on a rule id is rejected with "Authentication
+error" by the same token that may `POST` and `PUT` rules. The script uses
+`PUT` for updates and never `PATCH`.
+
+The forwarding destination is the operator's existing mailbox — CF requires
+the destination to confirm before it forwards, so the personal address
+stays private while `privacy@` stays public.
 
 If the address ever changes, it is a one-line edit in each of
 `frontend/privacy.html` and `frontend/zh/privacy.html` — never a policy
