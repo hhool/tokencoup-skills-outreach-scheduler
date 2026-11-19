@@ -62,3 +62,23 @@ def test_stale_go_marker_is_cleared_on_new_request(cfg):
 def test_domain_sanitized_in_filenames(cfg):
     p = handoff.status_path(cfg, "a.example.com/x")
     assert "/" not in p.name and p.name.endswith(".json")
+
+
+def test_record_post_solve_writes_evidence(cfg):
+    class FakePage:
+        def screenshot(self, path):
+            import pathlib as _p
+            _p.Path(path).write_bytes(b"png")
+    rec = handoff.record_post_solve(cfg, "example.com", "https://example.com/join",
+                                    form=True, page=FakePage())
+    assert rec["form_found"] is True and rec["url"].endswith("/join")
+    assert handoff.evidence_path(cfg, "example.com").read_bytes() == b"png"
+    import json as _json
+    saved = _json.loads((handoff.handoff_dir(cfg) /
+                         "example.com.post-solve.json").read_text())
+    assert saved["form_found"] is True
+
+
+def test_record_post_solve_without_page_is_safe(cfg):
+    rec = handoff.record_post_solve(cfg, "x.example", "https://x.example/", form=False)
+    assert rec["form_found"] is False and "screenshot" not in rec

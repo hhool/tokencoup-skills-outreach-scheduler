@@ -87,6 +87,34 @@ def wait_for_go(cfg: dict, domain: str, *, timeout: float = 300,
     return False
 
 
+def evidence_path(cfg: dict, domain: str) -> pathlib.Path:
+    return handoff_dir(cfg) / (_safe(domain) + ".post-solve.png")
+
+
+def record_post_solve(cfg: dict, domain: str, url: str, *, form: bool,
+                      page=None) -> dict:
+    """Snapshot the state the operator left after solving the challenge.
+
+    The browser may have navigated on solve; a screenshot plus the landing URL
+    and a form flag make the handoff auditable — if the flow ends in `human`
+    again we can see whether the challenge was actually cleared, instead of
+    guessing. Nothing here affects the signup decision.
+    """
+    d = handoff_dir(cfg)
+    d.mkdir(parents=True, exist_ok=True)
+    rec = {"domain": domain, "url": url, "form_found": bool(form),
+           "captured_at": time.strftime("%Y-%m-%d %H:%M:%S")}
+    if page is not None:
+        try:
+            page.screenshot(path=str(evidence_path(cfg, domain)))
+            rec["screenshot"] = evidence_path(cfg, domain).name
+        except Exception:  # noqa: BLE001 — evidence is best-effort
+            pass
+    (d / (_safe(domain) + ".post-solve.json")).write_text(
+        json.dumps(rec, ensure_ascii=False))
+    return rec
+
+
 def clear(cfg: dict, domain: str) -> None:
     for p in (status_path(cfg, domain), go_path(cfg, domain)):
         if p.exists():
