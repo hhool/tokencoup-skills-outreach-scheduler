@@ -78,4 +78,27 @@ def test_hidden_fields_skipped():
 
 def test_french_success_hint_detected():
     assert cua._looks_successful_type("Merci, votre site a été ajouté") is True
+    assert cua._looks_successful_type(
+        "Votre message nous a bien été transmis") is True
     assert cua._looks_successful_type("Just a moment...") is False
+    # bare "merci" appears in errors — must NOT count as success
+    assert cua._looks_successful_type("Merci de préciser votre requête") is False
+
+
+def test_pick_form_uses_submit_form_not_search():
+    """The site search form (single q) must not win over the submission form."""
+    class F:
+        def __init__(self, names):
+            self._in = [FakeInput(n) for n in names]
+
+        def query_selector_all(self, sel):
+            return self._in if sel == "input, textarea" else []
+
+    search = F(["q"])
+    submit = F(["Nom", "E-mail", "URL", "commentaire"])
+
+    class P:
+        def query_selector_all(self, sel):
+            return [search, submit] if sel == "form" else []
+
+    assert cua._pick_form(P()) is submit

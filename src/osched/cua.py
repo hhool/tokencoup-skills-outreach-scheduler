@@ -50,8 +50,12 @@ CAPTCHA_IFRAMES = {
 # confirm in their own language; English-only hints produced false `missing`.
 SUCCESS_HINTS = ("thank you", "successfully", "submitted", "received",
                  "approved", "pending review", "已提交", "感谢",
-                 "merci", "confirmation", "enregistr", "ajouté", "ajoute",
-                 "votre site a été", "danke", "gracias", "confirmación")
+                 # French: use specific success phrases. Bare "merci" is an
+                 # error on some sites ("Merci de préciser votre requête").
+                 "merci, votre", "votre site a été", "a été ajouté",
+                 "a bien été transmis", "a bien été enregistré",
+                 "enregistré avec succès", "danke", "gracias",
+                 "confirmación")
 
 REPEAT_FAIL_LIMIT = 3
 
@@ -82,10 +86,45 @@ def _recent_cua_failures(conn, domain: str) -> int:
     return n
 
 
-def _fill_form(page, ctx: dict, entry_url: str) -> bool:
-    """Fill visible inputs by semantic name heuristics. True if any filled."""
+# Semantic field keys used both to score a form and to fill it.
+_FIELD_KEYS = ("title", "name", "author", "nom", "desc", "summary",
+               "comment", "message", "text", "commentaire", "mail",
+               "email", "e-mail", "url", "link", "site", "web")
+
+
+def _pick_form(page):
+    """Choose the form with the most semantic fields — not the site search.
+
+    Many directory pages put a site-search form (single `q` input) before the
+    actual submission form. Filling all forms and clicking the first submit
+    button posted to search and produced a false `submitted` verdict.
+    """
+    best, best_score = None, 0
+    for form in page.query_selector_all("form"):
+        score = 0
+        for h in form.query_selector_all("input, textarea"):
+            typ = (h.get_attribute("type") or "").lower()
+            if typ in ("hidden", "submit", "button", "checkbox", "radio"):
+                continue
+            name = ((h.get_attribute("name") or h.get_attribute("id") or "")
+                    .lower())
+            if name and any(k in name for k in _FIELD_KEYS):
+                score += 1
+        if score > best_score:
+            best, best_score = form, score
+    return best
+
+
+def _fill_form(page, ctx: dict, entry_url: str, form=None) -> bool:
+    """Fill visible inputs by semantic name heuristics. True if any filled.
+
+    When ``form`` is given, only that form's fields are touched — critical on
+    pages that also carry a search form.
+    """
     filled = 0
-    for handle in page.query_selector_all("form input, form textarea"):
+    scope = form.query_selector_all("input, textarea") if form else \
+        page.query_selector_all("form input, form textarea")
+    for handle in scope:
         try:
             name = (handle.get_attribute("name")
                     or handle.get_attribute("id") or "").lower()
@@ -145,8 +184,27 @@ def _click_captcha(page, captcha: str) -> str:
     return "escalated"
 
 
-def _submit(page) -> bool:
-    """Click the submit control or press Enter; wait for a response."""
+def _submit(page, form=None) -> bool:
+    """Click a submit control (preferably inside ``form``); wait for a reply.
+
+    Scoping to the chosen form avoids clicking a site-search button that
+    precedes the real submission form in the DOM.
+    """
+    selectors = ("button[type='submit']", "input[type='submit']", "button")
+    if form is not None:
+        for sel in selectors:
+            btn = form.query_selector(sel)
+            if btn and btn.is_visible():
+                try:
+                    btn.click()
+                    page.wait_for_load_state("domcontentloaded", timeout=15000)
+                    return True
+                except PWTimeout:
+                    return True   # soft (AJAX) navigation; verify is authority
+        form.press("Enter")
+        page.wait_for_timeout(3000)
+        return True
+    # Legacy path: no form selected — first visible submit control on page.
     for sel in ("form button[type='submit']", "form input[type='submit']",
                 "form button"):
         btn = page.query_selector(sel)
@@ -156,10 +214,10 @@ def _submit(page) -> bool:
                 page.wait_for_load_state("domcontentloaded", timeout=15000)
                 return True
             except PWTimeout:
-                return True   # navigation may be soft (AJAX); treat as sent
-    form = page.query_selector("form")
-    if form:
-        form.press("Enter")
+                return True
+    first = page.query_selector("form")
+    if first:
+        first.press("Enter")
         page.wait_for_timeout(3000)
         return True
     return False
@@ -194,11 +252,12 @@ def _execute_one(page, row, ctx: dict) -> dict:
             return {"state": "human", "note": f"captcha {captcha} {action} -> "
                     "human queue", "secs": round(time.time() - started, 1)}
 
-    if not _fill_form(page, ctx, entry):
+    form = _pick_form(page)
+    if not _fill_form(page, ctx, entry, form=form):
         return {"state": "human", "note": "no fillable form fields",
                 "secs": round(time.time() - started, 1)}
 
-    if not _submit(page):
+    if not _submit(page, form=form):
         return {"state": "human", "note": "no submit control found",
                 "secs": round(time.time() - started, 1)}
 
