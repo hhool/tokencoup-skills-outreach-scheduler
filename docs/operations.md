@@ -38,6 +38,22 @@ Rules enforced by the importer (`src/osched/workbench.py`):
 | form | live page must expose a form with a URL-ish field | login / signup / search / newsletter boxes are not submission forms |
 | captcha | browser-class captcha -> `cua`; unknown -> `human` | §7.1 tiers; a stale cached captcha never routes a formless page to a browser |
 
+## Live-link alerts (evidence layer)
+
+Every verify pass also runs edge detection over the check series and
+emails the ops mailbox (`cfg.report.email`) — never the client directly;
+clients see drops via the weekly report and the receipt page.
+
+| alert | fires when | dedupe |
+|-------|-----------|--------|
+| `link-drop` | a previously-live link rechecks as missing/unreachable | edge only — consecutive missings are quiet |
+| `rel-change` | the rel attribute of a live link changed between checks | per change |
+| `live-check-exhausted` | missings after the first live verdict hit `MAX_ATTEMPTS` -> human | once, at handoff |
+
+Fail-open: a mail failure logs `run_log action='alert' result='failed'`
+and never breaks the verify loop. Receipt URL is attached when
+available. Live plans recheck every `RECHECK_AFTER_DAYS` (14) days.
+
 ## Cron entry points
 
 `scripts/daily.sh` is the only cron entry. Two segments:

@@ -120,6 +120,39 @@ wave-3 human queue. The curated ledger the SEO workbench keeps per site
 </tr>
 </tbody>
 </table>
+<h2>Live-link alerts (evidence layer)</h2>
+<p>Every verify pass also runs edge detection over the check series and
+emails the ops mailbox (<code>cfg.report.email</code>) — never the client directly;
+clients see drops via the weekly report and the receipt page.</p>
+<table>
+<thead>
+<tr>
+<th>alert</th>
+<th>fires when</th>
+<th>dedupe</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>link-drop</code></td>
+<td>a previously-live link rechecks as missing/unreachable</td>
+<td>edge only — consecutive missings are quiet</td>
+</tr>
+<tr>
+<td><code>rel-change</code></td>
+<td>the rel attribute of a live link changed between checks</td>
+<td>per change</td>
+</tr>
+<tr>
+<td><code>live-check-exhausted</code></td>
+<td>missings after the first live verdict hit <code>MAX_ATTEMPTS</code> -&gt; human</td>
+<td>once, at handoff</td>
+</tr>
+</tbody>
+</table>
+<p>Fail-open: a mail failure logs <code>run_log action='alert' result='failed'</code>
+and never breaks the verify loop. Receipt URL is attached when
+available. Live plans recheck every <code>RECHECK_AFTER_DAYS</code> (14) days.</p>
 <h2>Cron entry points</h2>
 <p><code>scripts/daily.sh</code> is the only cron entry. Two segments:</p>
 <table>
@@ -257,6 +290,38 @@ wordpress.com、reddit、tumblr。这些要「开户 + 发文」，不是表单�
 </tr>
 </tbody>
 </table>
+<h2>实链告警（证据层）</h2>
+<p>每次验活同时对检查序列做边沿检测，命中即发运维信箱
+（<code>cfg.report.email</code>）——不直发客户；客户通过周报与证据页感知掉链。</p>
+<table>
+<thead>
+<tr>
+<th>告警</th>
+<th>触发</th>
+<th>去重</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>link-drop</code></td>
+<td>曾 live 的链接复检变 missing/unreachable</td>
+<td>只在边沿触发——连续未命中保持安静</td>
+</tr>
+<tr>
+<td><code>rel-change</code></td>
+<td>live 链接的 rel 属性在两次检查间变化</td>
+<td>每次变化</td>
+</tr>
+<tr>
+<td><code>live-check-exhausted</code></td>
+<td>首次 live 后的 missing 达到 <code>MAX_ATTEMPTS</code> → 进人工</td>
+<td>交接时一次</td>
+</tr>
+</tbody>
+</table>
+<p>Fail-open：发信失败记 <code>run_log action='alert' result='failed'</code>，绝不中断
+验活循环。可用时附证据页 URL。live 计划每 <code>RECHECK_AFTER_DAYS</code>（14）
+天复检一轮。</p>
 <h2>Cron 入口</h2>
 <p><code>scripts/daily.sh</code> 是唯一 cron 入口，两个段：</p>
 <table>

@@ -214,3 +214,91 @@ def test_receipt_and_page_render(conn, cfg, monkeypatch):
 def test_receipt_none_for_unknown_plan(conn, cfg):
     assert evidence.receipt(conn, cfg, 999) is None
     assert evidence.render_page(conn, cfg, 999) is None
+
+
+# --------------------------------------------------------------------------
+# alerts: transition-based, dedupe by edge, recipient = ops mailbox
+# --------------------------------------------------------------------------
+
+def _age_checks(conn, days=15):
+    conn.execute("UPDATE link_check SET checked_at=datetime('now', ?)",
+                 (f"-{days} days",))
+    conn.commit()
+
+
+def _alerts(conn):
+    return conn.execute(
+        "SELECT target, result, note FROM run_log WHERE action='alert' "
+        "ORDER BY id").fetchall()
+
+
+def test_drop_alert_fires_on_live_to_missing_edge(conn, cfg, monkeypatch):
+    cfg["report"] = {"email": "ops@example.com"}
+    sent = []
+    monkeypatch.setattr("osched.report.send_mail",
+                        lambda c, to, subj, body, **kw: sent.append(subj))
+    _seed_plan(conn)
+    monkeypatch.setattr(probe, "_fetch",
+                        lambda t, timeout: (200, "", LISTING_HTML))
+    verify.check_one(conn, _due_row(conn), cfg=cfg)
+    assert not sent                                   # first live: no alert
+
+    _age_checks(conn)
+    monkeypatch.setattr(probe, "_fetch",
+                        lambda t, timeout: (200, "", "<html></html>"))
+    verify.check_one(conn, _due_row(conn), cfg=cfg)
+    assert len(sent) == 1 and "link-drop" in sent[0]
+    a = _alerts(conn)[0]
+    assert a["result"] == "sent" and "link-drop" in a["note"]
+
+
+def test_consecutive_missing_is_quiet_until_exhaustion(conn, cfg,
+                                                       monkeypatch):
+    cfg["report"] = {"email": "ops@example.com"}
+    monkeypatch.setattr("osched.report.send_mail",
+                        lambda c, to, subj, body, **kw: None)
+    _seed_plan(conn)
+    monkeypatch.setattr(probe, "_fetch",
+                        lambda t, timeout: (200, "", LISTING_HTML))
+    verify.check_one(conn, _due_row(conn), cfg=cfg)
+    _age_checks(conn)
+    monkeypatch.setattr(probe, "_fetch",
+                        lambda t, timeout: (200, "", "<html></html>"))
+    verify.check_one(conn, _due_row(conn), cfg=cfg)   # edge: drop alert
+    for _ in range(2):                                # 2 more missings
+        _age_checks(conn)
+        verify.check_one(conn, _due_row(conn), cfg=cfg)
+    kinds = [json.loads(a["note"])["kind"] for a in _alerts(conn)]
+    assert kinds == ["link-drop", "live-check-exhausted"]
+    st = conn.execute("SELECT state FROM plan").fetchone()["state"]
+    assert st == "human"
+
+
+def test_rel_change_alert_on_flip(conn, cfg, monkeypatch):
+    cfg["report"] = {"email": "ops@example.com"}
+    monkeypatch.setattr("osched.report.send_mail",
+                        lambda c, to, subj, body, **kw: None)
+    _seed_plan(conn)
+    monkeypatch.setattr(probe, "_fetch",
+                        lambda t, timeout: (200, "", LISTING_HTML))
+    verify.check_one(conn, _due_row(conn), cfg=cfg)
+    _age_checks(conn)
+    flipped = LISTING_HTML.replace('rel="nofollow sponsored"',
+                                   'rel="nofollow"')
+    monkeypatch.setattr(probe, "_fetch",
+                        lambda t, timeout: (200, "", flipped))
+    verify.check_one(conn, _due_row(conn), cfg=cfg)
+    kinds = [json.loads(a["note"])["kind"] for a in _alerts(conn)]
+    assert kinds == ["rel-change"]
+
+
+def test_no_cfg_means_no_alert_rows(conn, cfg, monkeypatch):
+    _seed_plan(conn)
+    monkeypatch.setattr(probe, "_fetch",
+                        lambda t, timeout: (200, "", LISTING_HTML))
+    verify.check_one(conn, _due_row(conn))            # cfg=None
+    _age_checks(conn)
+    monkeypatch.setattr(probe, "_fetch",
+                        lambda t, timeout: (200, "", "<html></html>"))
+    verify.check_one(conn, _due_row(conn))
+    assert len(_alerts(conn)) == 0

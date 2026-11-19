@@ -411,7 +411,8 @@ def cmd_verify(cfg: dict, domain: str | None, days: int, limit: int) -> int:
     pid = None
     if domain:
         pid = _get_project(cfg, conn, domain)["_id"]
-    stats = verify_mod.run_verify(conn, pid, days_after=days, limit=limit)
+    stats = verify_mod.run_verify(conn, pid, days_after=days, limit=limit,
+                                  cfg=cfg)
     print("verify: " + json.dumps({k: v for k, v in stats.items()
                                    if k != "rows"}, ensure_ascii=False))
     for r in stats.get("rows", []):

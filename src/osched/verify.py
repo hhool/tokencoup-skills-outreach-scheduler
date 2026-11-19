@@ -97,10 +97,12 @@ def due_verify(conn, project_id: int | None = None, *, days_after: int = 3,
     """
     rows = conn.execute(
         """
-        SELECT pl.*, p.domain AS pool_domain, p.entry_url, p.url
+        SELECT pl.*, p.domain AS pool_domain, p.entry_url, p.url,
+               pr.domain AS project_domain
         FROM plan pl
         JOIN match m ON m.id = pl.match_id
         JOIN pool p ON p.id = m.pool_id
+        JOIN project pr ON pr.id = pl.project_id
         WHERE (
           (pl.state IN ('submitted', 'sent')
             AND pl.executed_at <= datetime('now', ?)
@@ -126,7 +128,7 @@ def due_verify(conn, project_id: int | None = None, *, days_after: int = 3,
     return rows[:limit] if limit else rows
 
 
-def check_one(conn, row) -> dict:
+def check_one(conn, row, cfg: dict | None = None) -> dict:
     """Re-visit one plan's directory page and look for the landing URL."""
     landing = _landing(row["result_note"], "")
     target = row["entry_url"] or row["url"]
@@ -153,6 +155,7 @@ def check_one(conn, row) -> dict:
         anchor = _find_anchor(html, landing)
         page_sha = hashlib.sha256(
             html.encode("utf-8", "replace")).hexdigest()
+        outcome["rel"] = anchor.get("rel", "")
 
     conn.execute(
         """INSERT INTO link_verify(plan_id, result, http_status, note,
@@ -218,8 +221,95 @@ def check_one(conn, row) -> dict:
                             ensure_ascii=False), row["id"]),
             )
             outcome["note"] += " -> exhausted, human queue"
+            outcome["exhausted"] = True
+
+    _maybe_alert(conn, cfg, row, outcome)
     conn.commit()
     return outcome
+
+
+# ---------------------------------------------------------------------------
+# Alerts: transition-based, so they dedupe naturally. Only the *edge* into
+# a bad state fires — consecutive missings after the first one are quiet
+# until exhaustion. Recipient is the ops mailbox (cfg.report.email): a
+# dropped or nofollow-flipped link is ours to fix; clients see drops via
+# the weekly report and the receipt page.
+# ---------------------------------------------------------------------------
+
+def _maybe_alert(conn, cfg: dict | None, row, outcome: dict) -> None:
+    if not cfg:
+        return
+    kind, detail = _alert_transition(conn, row["id"], outcome)
+    if outcome.get("exhausted"):
+        kind = kind or "live-check-exhausted"
+        detail = detail or outcome["note"]
+    if not kind:
+        return
+    info = dict(row)
+    result, reason = "skipped", "no recipient configured"
+    recipient = ((cfg.get("report") or {}).get("email") or "").strip()
+    if recipient:
+        try:
+            from . import report as report_mod
+            receipt_url = ""
+            try:
+                from .evidence import url_for
+                receipt_url = url_for(cfg, row["id"])
+            except Exception:  # noqa: BLE001 — receipt URL is best-effort
+                pass
+            subject = (f"[linkattest] {kind}: {row['pool_domain']} "
+                       f"plan#{row['id']} ({info.get('project_domain', '')})")
+            body = (f"kind: {kind}\n"
+                    f"project: {info.get('project_domain', '')}\n"
+                    f"placement: {row['pool_domain']}\n"
+                    f"listing: {row['entry_url'] or row['url']}\n"
+                    f"result: {outcome['result']} (http {outcome['http']})\n"
+                    f"note: {outcome['note']}\n"
+                    f"{detail}\n"
+                    f"receipt: {receipt_url or '(unavailable)'}\n")
+            report_mod.send_mail(cfg, recipient, subject, body,
+                                 from_label="linkattest-verify")
+            result, reason = "sent", recipient
+        except Exception as e:  # noqa: BLE001 — alerts never break verify
+            result, reason = "failed", str(e)[:150]
+    conn.execute(
+        "INSERT INTO run_log(action, target, result, note) "
+        "VALUES('alert', ?, ?, ?)",
+        (f"{row['pool_domain']} plan#{row['id']}", result,
+         json.dumps({"kind": kind, "reason": reason},
+                    ensure_ascii=False)),
+    )
+
+
+def _alert_transition(conn, plan_id: int, outcome: dict) -> tuple[str, str]:
+    """Edge detection over the check series: fire only when the previous
+    event differs. Returns (kind, detail) or (None, '')."""
+    prev = conn.execute(
+        """SELECT * FROM link_check WHERE plan_id=? AND id < ?
+           ORDER BY id DESC, id LIMIT 1""",
+        (plan_id, _last_event_id(conn, plan_id))).fetchone()
+    if not prev:
+        return "", ""
+    if prev["result"] == "live":
+        if outcome["result"] in ("missing", "unreachable"):
+            return ("link-drop",
+                    f"was live (rel={prev['rel'] or 'none'}), "
+                    f"now {outcome['result']}")
+        if outcome["result"] == "live" and \
+                (prev["rel"] or "") != (outcome.get("rel", "") or ""):
+            return ("rel-change",
+                    f"rel was '{prev['rel'] or 'none'}', "
+                    f"now '{outcome.get('rel', '') or 'none'}'")
+    return "", ""
+
+
+def _last_event_id(conn, plan_id: int) -> int:
+    """Id of the most recent event (the one just written) — prev events
+    are everything strictly before it."""
+    row = conn.execute(
+        "SELECT COALESCE(MAX(id), 0) AS i FROM link_check WHERE plan_id=?",
+        (plan_id,)).fetchone()
+    return row["i"]
 
 
 def _safe_note(note_text: str) -> dict:
@@ -230,13 +320,13 @@ def _safe_note(note_text: str) -> dict:
 
 
 def run_verify(conn, project_id: int | None = None, *, days_after: int = 3,
-               limit: int = 0) -> dict:
+               limit: int = 0, cfg: dict | None = None) -> dict:
     """Verify all due plans. Returns summary + per-row detail."""
     rows = due_verify(conn, project_id, days_after=days_after, limit=limit)
     stats = {"due": len(rows), "live": 0, "missing": 0, "unreachable": 0,
              "bot-blocked": 0, "rows": []}
     for row in rows:
-        outcome = check_one(conn, row)
+        outcome = check_one(conn, row, cfg=cfg)
         stats[outcome["result"]] += 1
         stats["rows"].append({"plan_id": row["id"],
                               "domain": row["pool_domain"],

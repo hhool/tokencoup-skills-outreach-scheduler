@@ -36,6 +36,21 @@ python3 bin/osched.py import-workbench ~/seo/<site>/targets.jsonl [--min-fit 50]
 | 表单 | 实时页面必须存在含 url 类字段的表单 | 登录/注册/搜索/订阅框不是提交表单 |
 | 验证码 | 浏览器类 → `cua`；未知 → `human` | §7.1 分级；缓存的旧验证码不会把无表单页面送进浏览器 |
 
+## 实链告警（证据层）
+
+每次验活同时对检查序列做边沿检测，命中即发运维信箱
+（`cfg.report.email`）——不直发客户；客户通过周报与证据页感知掉链。
+
+| 告警 | 触发 | 去重 |
+|------|------|------|
+| `link-drop` | 曾 live 的链接复检变 missing/unreachable | 只在边沿触发——连续未命中保持安静 |
+| `rel-change` | live 链接的 rel 属性在两次检查间变化 | 每次变化 |
+| `live-check-exhausted` | 首次 live 后的 missing 达到 `MAX_ATTEMPTS` → 进人工 | 交接时一次 |
+
+Fail-open：发信失败记 `run_log action='alert' result='failed'`，绝不中断
+验活循环。可用时附证据页 URL。live 计划每 `RECHECK_AFTER_DAYS`（14）
+天复检一轮。
+
 ## Cron 入口
 
 `scripts/daily.sh` 是唯一 cron 入口，两个段：
