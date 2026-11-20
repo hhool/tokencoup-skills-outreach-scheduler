@@ -27,6 +27,18 @@
      原始文件名↔中性名的映射表仅存本地 `data/sources/index.json`（gitignored，不入库）
    - 格式：`{"meta": {...}, "rows": [{"url": "http://host/", "via_competitors": [...], "inbound": n}]}`
 
+## 发现层快照源（2026-11-20 新增）
+
+并列的第二类 WDC 源：v0.3 共链/出链图谱产出的**发现层候选**。它不是竞品反链，也不能被描述成竞品反链。
+
+- 产物：`colink_cross_validated.json`（12,133 域名 / 9 行业；字段 `domain`、`industry`、`inlink_support`、`dir_llr`、`dir_prob`、`outlink_*`、`composite`）。
+- 准备：`python3 import/prepare_discovery_snapshot.py --input <产物路径> --version 0.3`，校验后写入 `data/sources/wdc-discovery-v0.3.json`（gitignored）。工作台路径不进提交配置。
+- 配置块：`sources.wdc_discovery_snapshot`（`glob`、可选 `snapshot`）。
+- 适配器：`src/osched/adapters/wdc_discovery.py`，kind 为 `wdc_discovery`。
+- 字段映射：`inlink_support` → `evidence.inbound`（同行业种子共链数，不是竞品链接）；`via_competitors` 恒为空；`corpus` = 快照版本；全部图谱字段保留在 `hints["discovery"]` 与 `raw`。
+- 打分：`matching.discovery_prior()` 只对发现层行读取图谱 hints，上限 0.75；与竞品证据/人工 fit 用 `max()` 合并（绝不累加），非发现层行打分完全不变，图谱证据也不能单独触发强证据加成。行业→项目标签匹配尚未接入。
+- 诚实边界：发现层候选**不等于**可投递平台；入池后仍需 probe/classify 决定是否升级为机会条目。图谱不提供可提交性/存活反馈，不伪造该层。
+
 ## 导入层适配要点（待开发）
 
 - 输入 = competitor-links-*.json（以及未来其他同类收割 JSON/CSV）

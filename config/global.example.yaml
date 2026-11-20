@@ -13,6 +13,12 @@ sources:
   # the project reads only what lives under data_root (gitignored).
   wdc_competitor_links:
     glob: "data/sources/competitor-links-*.json"
+  # Discovery-layer snapshot from the WDC co-link/outlink graph. Prepare it
+  # with import/prepare_discovery_snapshot.py --input <snapshot.json>;
+  # rows still need probe/classify before they can be queued.
+  wdc_discovery_snapshot:
+    glob: "data/sources/wdc-discovery-*.json"
+    snapshot: "wdc-v0.3"           # stamped into every record's hints/evidence
   # similar: []                    # future adapters, one block each
   exclude:
     - workbench_jsonl

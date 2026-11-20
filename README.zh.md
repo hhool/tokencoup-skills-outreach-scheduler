@@ -46,7 +46,7 @@ src/osched/
   profile.py             每域名可投递性画像与处置建议（B4）
   ops.py                 多客户运营视图 + SLA 告警（B5）
 tools/private_scan.py    私有信息提交前扫描闸
-import/                  WDC 收割基线代码（原样复制；见 import/README.zh.md）
+import/                  WDC 收割基线代码（原样复制）+ prepare_discovery_snapshot.py；见 import/README.zh.md
 scripts/daily.sh         cron 入口：pipeline / run 两段
 docs/                    接单 / 运维 / 业务路线图（见 docs/README.zh.md）
 ```

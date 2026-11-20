@@ -176,6 +176,7 @@ validate(rec) -> [Issue]                  记录级校验：URL 合法、必填�
 | kind | 输入 | 状态 |
 |------|------|------|
 | `wdc_competitor_links` | `competitor-links-<center>.json`（import/harvest_competitor_links.py 产物）；evidence 映射 via_competitors→evidence.via_competitors、inbound→evidence.inbound | 已定义，随基线代码就绪 |
+| `wdc_discovery_snapshot` | `wdc-discovery-<version>.json`（v0.3 共链/出链发现层产物）；inlink_support→evidence.inbound、via_competitors 恒空、图谱字段进 hints/raw | 2026-11-20 已定义；仅发现层，仍需 probe |
 | `similar_csv` / `similar_json` | 其他同类收割数据的通用映射适配器（列名/字段映射进 YAML） | 预留，待样例后定义映射 |
 
 数据流：`SourceAdapter → SourceRecord → probe(探测) → classify(分类) → DR 补齐 → PoolEntry(SQLite 池)`
@@ -210,9 +211,11 @@ score = w1×类别匹配(0/1)
       + w2×语言/地区匹配
       + w3×wave 优先(wave1=1, wave2=0.6, wave3=0)
       + w4×DR 归一化(dr/10)
-      + w5×fit_score 先验(导入自带)
+      + w5×先验 = max(竞品证据, 人工 fit, 发现层图谱)
       - 排除项（已投递/已拒绝/排除域名列表 → 直接不入队）
 ```
+
+发现层图谱先验（仅 `wdc_discovery` 行）上限 0.75，用 `max()` 合并、绝不累加（2026-11-20 新增）。
 
 - 权重和阈值进 YAML，可按项目覆盖
 - **新鲜度加权（2026-11-18 拍板）**：新加入的 `page` 资产条目（如二期产品/游戏页）作为落地 URL 获得新鲜度加分，二期推广优先于整站条目；具体因子随 Phase 3 打分落地

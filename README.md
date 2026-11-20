@@ -57,7 +57,7 @@ src/osched/
   profile.py             per-domain submittability profile & suggestions (B4)
   ops.py                 multi-client operations view + SLA alerts (B5)
 tools/private_scan.py    private-information pre-commit gate
-import/                  baseline WDC harvest code (copied as-is; see import/README.md)
+import/                  baseline WDC harvest code (as-is) + prepare_discovery_snapshot.py; see import/README.md
 scripts/daily.sh         cron entry: pipeline & run segments
 docs/                    client-intake / operations / business roadmap (see docs/README.md)
 ```

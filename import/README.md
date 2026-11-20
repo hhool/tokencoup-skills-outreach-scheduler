@@ -32,6 +32,33 @@ Chinese version: see `README.zh.md`.
      `data/sources/index.json`
    - format: `{"meta": {...}, "rows": [{"url": "http://host/", "via_competitors": [...], "inbound": n}]}`
 
+## Discovery snapshot source (added 2026-11-20)
+
+A second, parallel WDC source carries the **v0.3 discovery graph** produced by
+the co-link/outlink pipeline. It is NOT competitor backlinks and must not be
+described as such.
+
+- Product: `colink_cross_validated.json` (12,133 domains across 9 industries;
+  fields `domain`, `industry`, `inlink_support`, `dir_llr`, `dir_prob`,
+  `outlink_*`, `composite`).
+- Prepare: `python3 import/prepare_discovery_snapshot.py --input <product.json> --version 0.3`
+  validates the product and writes `data/sources/wdc-discovery-v0.3.json`
+  (gitignored). The workset path never appears in committed config.
+- Config block: `sources.wdc_discovery_snapshot` (`glob`, optional `snapshot`).
+- Adapter: `src/osched/adapters/wdc_discovery.py`, kind `wdc_discovery`.
+- Mapping: `inlink_support` → `evidence.inbound` (seed co-link support, not
+  competitor links); `via_competitors` stays empty; `corpus` = snapshot
+  version; all graph fields preserved in `hints["discovery"]` and `raw`.
+- Scoring: `matching.discovery_prior()` reads the graph hints for discovery
+  rows only; it is capped at 0.75 and combined with competitor evidence /
+  curated fit via `max()` (never summed), so non-discovery rows score exactly
+  as before and graph evidence alone never triggers the strong-evidence
+  freshness boost. Industry-to-project-tag matching is not wired yet.
+- Honest boundary: discovery candidates are **not** submittable platforms.
+  They enter the pool as ordinary rows; probe/classify still decide whether
+  they become opportunities. No feedback layer (submittability / survival) is
+  inferred from the graph.
+
 ## Adaptation notes for the import layer (to be developed)
 
 - Input = competitor-links-*.json (and future similar harvested JSON/CSV)

@@ -181,6 +181,7 @@ Invariants (adapter discipline):
 | kind | input | status |
 |------|-------|--------|
 | `wdc_competitor_links` | `competitor-links-<center>.json` (product of import/harvest_competitor_links.py); evidence maps via_competitors→evidence.via_competitors, inbound→evidence.inbound | defined, shipped with baseline code |
+| `wdc_discovery_snapshot` | `wdc-discovery-<version>.json` (v0.3 co-link/outlink discovery product); inlink_support→evidence.inbound, via_competitors stays empty, graph fields in hints/raw | defined 2026-11-20; discovery layer only, still needs probe |
 | `similar_csv` / `similar_json` | generic mapping adapters for other similar harvested data (column/field mapping lives in YAML) | reserved, mapping pending samples |
 
 Data flow: `SourceAdapter → SourceRecord → probe → classify → DR enrichment → PoolEntry (SQLite pool)`
@@ -216,9 +217,12 @@ score = w1×category match (0/1)
       + w2×language/geo match
       + w3×wave priority (wave1=1, wave2=0.6, wave3=0)
       + w4×DR normalized (dr/10)
-      + w5×competitor-evidence prior (via_competitors/inbound from import)
+      + w5×prior = max(competitor-evidence, curated fit, discovery graph)
       - exclusions (already submitted / rejected / excluded-domain list → never enqueued)
 ```
+
+The discovery-graph prior (`wdc_discovery` rows only) is capped at 0.75 and
+combined by `max()`, never summed (added 2026-11-20).
 
 - Weights and threshold live in YAML, overridable per project
 - **Freshness boost (ratified 2026-11-18)**: newly added `page` asset entries (e.g. a phase-2 product/game page) get a recency bonus as landing URLs, so phase-2 promotions outrank whole-site ones; exact factor lands with Phase 3 scoring

@@ -25,7 +25,10 @@ class SourceRef:
 class Evidence:
     """Why this record is a plausible outreach candidate (may be empty).
 
-    For WDC: hosts that linked to competitors in the crawl corpus.
+    For WDC competitor backlinks: hosts that linked to competitors in the
+    crawl corpus. For the discovery-graph snapshot: `inbound` carries the
+    same-industry seed co-link count, while `via_competitors` stays empty —
+    the two sources must not be confused (no fabricated competitor signal).
     """
 
     via_competitors: list[str] = field(default_factory=list)

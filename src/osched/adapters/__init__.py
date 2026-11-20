@@ -7,8 +7,12 @@ from __future__ import annotations
 
 from .base import SourceAdapter, SourceFile, Issue
 from .wdc import WdcCompetitorLinksAdapter
+from .wdc_discovery import WdcDiscoveryAdapter
 
-__all__ = ["SourceAdapter", "SourceFile", "Issue", "build_adapters"]
+__all__ = [
+    "SourceAdapter", "SourceFile", "Issue",
+    "WdcCompetitorLinksAdapter", "WdcDiscoveryAdapter", "build_adapters",
+]
 
 
 def build_adapters(sources_cfg: dict) -> list[SourceAdapter]:
@@ -22,6 +26,13 @@ def build_adapters(sources_cfg: dict) -> list[SourceAdapter]:
             if not glob_pattern:
                 raise ValueError("sources.wdc_competitor_links.glob is required")
             adapters.append(WdcCompetitorLinksAdapter(glob_pattern))
+        elif name == "wdc_discovery_snapshot":
+            glob_pattern = block.get("glob")
+            if not glob_pattern:
+                raise ValueError("sources.wdc_discovery_snapshot.glob is required")
+            adapters.append(
+                WdcDiscoveryAdapter(glob_pattern, block.get("snapshot") or "")
+            )
         else:
             # Unknown source kinds are rejected loudly — fail fast at startup.
             raise ValueError(f"unknown source kind: {name!r} (no adapter registered)")

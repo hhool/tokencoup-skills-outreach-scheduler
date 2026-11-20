@@ -76,6 +76,41 @@ def competitor_prior(evidence_json: str) -> float:
     return score
 
 
+def discovery_prior(hints_json: str) -> float:
+    """Discovery-layer prior 0..0.75 from WDC graph hints.
+
+    Only rows stamped by the discovery adapter (``hints.layer ==
+    'discovery'``) are considered. Combines directory probability, LLR,
+    outlink similarity and dual-signal agreement. Capped well below 1.0 so
+    graph evidence alone never triggers the strong-evidence freshness boost,
+    and never implies competitor backlinks or submittability.
+    中文：发现层图谱先验有上限，不能单独触发强证据加成，也不代表可投递。
+    """
+    try:
+        h = json.loads(hints_json or "{}")
+    except (json.JSONDecodeError, TypeError):
+        return 0.0
+    if not isinstance(h, dict) or h.get("layer") != "discovery":
+        return 0.0
+    d = h.get("discovery")
+    if not isinstance(d, dict):
+        return 0.0
+
+    def _nonneg(value) -> float:
+        try:
+            return max(0.0, float(value or 0))
+        except (TypeError, ValueError):
+            return 0.0
+
+    prob = min(1.0, _nonneg(d.get("dir_prob")))
+    llr = _nonneg(d.get("dir_llr"))
+    llr_score = llr / (llr + 10.0) if llr else 0.0
+    sim = min(1.0, _nonneg(d.get("outlink_similarity")) * 8.0)
+    agree = 1.0 if d.get("dual_signal_agree") else 0.0
+    raw = 0.4 * prob + 0.25 * llr_score + 0.2 * sim + 0.1 * agree
+    return round(min(0.75, raw), 4)
+
+
 def curated_fit(hints_json: str) -> int:
     """Curated fit 0..100 from the workbench bridge, 0 when absent."""
     try:
@@ -100,10 +135,13 @@ def score_row(row, project: dict[str, Any]) -> tuple[float, dict]:
     wave = WAVE_PRIORITY.get(row["wave"], 0.0)
     dr = (row["dr"] or 0.0) / 10.0
     prior = competitor_prior(row["evidence_json"])
-    # A curated ledger row carries a human fit score instead of crawl
-    # evidence; both answer the same question ("why is this a candidate").
+    # A curated ledger row carries a human fit score, and a discovery row
+    # carries WDC graph signals; both answer the same question ("why is this
+    # a candidate"). max() — never sum — prevents double counting when a
+    # domain happens to appear in more than one source.
     fit = curated_fit(row["hints_json"])
-    prior = max(prior, fit / 100.0)
+    disc = discovery_prior(row["hints_json"])
+    prior = max(prior, fit / 100.0, disc)
 
     score = (w["category"] * category + w["geo"] * geo + w["wave"] * wave
              + w["dr"] * dr + w["via_competitors"] * prior)
@@ -118,6 +156,7 @@ def score_row(row, project: dict[str, Any]) -> tuple[float, dict]:
         "category": round(category, 2), "geo": round(geo, 2),
         "wave": row["wave"], "dr": round(dr, 2),
         "prior": round(prior, 2), "boost": boost,
+        "discovery_prior": round(disc, 2),
     }
     return round(score + boost, 4), detail
 
