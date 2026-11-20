@@ -24,6 +24,10 @@ sources:
     - workbench_jsonl
     - prospector_store
 
+# Read-only topology manifest exported by import/prepare_discovery_topology.py
+topology:
+  version: "0.3"
+
 scheduler:
   run_at: "09:30"
   timezone: Asia/Shanghai

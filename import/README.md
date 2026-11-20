@@ -59,6 +59,23 @@ described as such.
   they become opportunities. No feedback layer (submittability / survival) is
   inferred from the graph.
 
+## Topology manifest (added 2026-11-20)
+
+The full graph lineage is a separate, versioned read-only asset:
+
+```bash
+python3 import/prepare_discovery_topology.py \
+  --workset <wdc-run dir> --graph-root <wdc-graph dir> --version 0.3
+python3 bin/osched.py topology     # render 9 stages / 12 edges, no writes
+```
+
+`data/sources/wdc-topology-v0.3.json` (gitignored) records each stage's
+artifacts, sizes, row counts and 12 dependencies. Artifacts over 200 MB are
+size-only (no multi-GB hashing); no workset path is written into the manifest.
+The human review stage is reported as `human-gate-pending` when
+`review_overrides.json` is absent — it is never shown as complete.
+`src/osched/topology.py` validates and renders the manifest only.
+
 ## Adaptation notes for the import layer (to be developed)
 
 - Input = competitor-links-*.json (and future similar harvested JSON/CSV)

@@ -39,6 +39,18 @@
 - 打分：`matching.discovery_prior()` 只对发现层行读取图谱 hints，上限 0.75；与竞品证据/人工 fit 用 `max()` 合并（绝不累加），非发现层行打分完全不变，图谱证据也不能单独触发强证据加成。行业→项目标签匹配尚未接入。
 - 诚实边界：发现层候选**不等于**可投递平台；入池后仍需 probe/classify 决定是否升级为机会条目。图谱不提供可提交性/存活反馈，不伪造该层。
 
+## 拓扑清单（2026-11-20 新增）
+
+完整图谱血缘是独立的、版本化的只读资产：
+
+```bash
+python3 import/prepare_discovery_topology.py \
+  --workset <wdc-run 目录> --graph-root <wdc-graph 目录> --version 0.3
+python3 bin/osched.py topology     # 展示 9 阶段 / 12 条依赖，不写盘
+```
+
+`data/sources/wdc-topology-v0.3.json`（gitignored）记录每阶段产物、大小、条数与 12 条依赖。超过 200 MB 的产物只记大小（不做多 GB 哈希）；清单里不写工作台路径。人工复核阶段在 `review_overrides.json` 缺失时标为 `human-gate-pending`，绝不显示成完成。`src/osched/topology.py` 只做校验与展示。
+
 ## 导入层适配要点（待开发）
 
 - 输入 = competitor-links-*.json（以及未来其他同类收割 JSON/CSV）

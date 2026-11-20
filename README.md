@@ -30,9 +30,9 @@ Chinese version: see `README.zh.md`.
 ## Layout
 
 ```
-bin/osched.py            CLI: import / probe / project / match / queue /
-                         confirm / reject / classify / dr / schedule / plan /
-                         execute / cua / verify / report / client-report /
+bin/osched.py            CLI: import / topology / probe / project / match /
+                         queue / confirm / reject / classify / dr / schedule /
+                         plan / execute / cua / verify / report / client-report /
                          account / mail-verify / account-activate /
                          profile / overview / asset / stats
 config/global.example.yaml   config template — copy to config/global.yaml

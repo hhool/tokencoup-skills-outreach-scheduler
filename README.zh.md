@@ -19,7 +19,7 @@ schedule → execute（HTTP 表单 + CUA 通道 + wave2 SMTP）→ 日报，含 
 ## 目录结构
 
 ```
-bin/osched.py            CLI：import / probe / project / match / queue /
+bin/osched.py            CLI：import / topology / probe / project / match / queue /
                          confirm / reject / classify / dr / schedule / plan /
                          execute / cua / verify / report / client-report /
                          account / mail-verify / account-activate /

@@ -2,6 +2,7 @@
 
 Subcommands:
   import   Run all configured import sources into the pool
+  topology Show the versioned WDC discovery topology manifest (read-only)
   probe    HTTP-probe unprobed pool entries (DESIGN.md §4/§4c)
   project  Register a project: DB row + YAML template under data_root/projects/
   match    Score pool x project -> pending-confirmation queue (§5)
@@ -31,6 +32,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import pathlib
 import sys
 
 sys.path.insert(0, "src")
@@ -576,6 +578,10 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--config", default=None, help="path to global YAML")
     sub = ap.add_subparsers(dest="cmd", required=True)
     sub.add_parser("import", help="run import sources into the pool")
+    p_topo = sub.add_parser(
+        "topology", help="show the WDC discovery topology manifest (read-only)")
+    p_topo.add_argument("--path", default=None,
+                        help="manifest path (default: data root / wdc-topology-v<version>.json)")
     p_wb = sub.add_parser(
         "import-workbench",
         help="one-way import of a workbench targets.jsonl ledger into the pool")
@@ -709,6 +715,14 @@ def main(argv: list[str] | None = None) -> int:
     cfg = load_config(args.config)
     if args.cmd == "import":
         return cmd_import(cfg)
+    if args.cmd == "topology":
+        from osched.topology import load_topology, render_text
+        version = str(cfg.get("topology", {}).get("version", "0.3")).lstrip("v")
+        path = pathlib.Path(args.path) if args.path else (
+            data_root(cfg) / "sources" / f"wdc-topology-v{version}.json"
+        )
+        print(render_text(load_topology(path)))
+        return 0
     if args.cmd == "import-workbench":
         from osched.workbench import import_targets
         conn = connect(data_root(cfg))
